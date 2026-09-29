@@ -104,10 +104,14 @@ export class Gui2Radar extends Gui2View {
         b2 = colorDistance(b1, [0, 0, 0]) > 200 ? [0, 0, 0] : [255, 255, 255];
       }
     }
-    const stroke = (fill: [number, number, number], second: [number, number, number]) =>
-      colorDistance(fill, second) < 80 ? (fill[0] + fill[1] + fill[2] > 380 ? [0, 0, 0] : [255, 255, 255]) : second;
+    // outline: the second color when it stands out on the dark radar, else white / black by luminance
+    const luminance = (c: [number, number, number]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const stroke = (fill: [number, number, number], second: [number, number, number]): [number, number, number] => {
+      if (colorDistance(fill, second) >= 110 && luminance(second) > 150) return second;
+      return luminance(fill) > 140 ? [10, 14, 12] : [255, 255, 255];
+    };
     this.teamFill = [css(a1), css(b1)];
-    this.teamStroke = [css(stroke(a1, a2) as [number, number, number]), css(stroke(b1, b2) as [number, number, number])];
+    this.teamStroke = [css(stroke(a1, a2)), css(stroke(b1, b2))];
   }
 
   protected Resize(): void {

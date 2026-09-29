@@ -32,6 +32,16 @@ export interface ErrorPanelOptions {
 export function showErrorPanel(error: unknown, o: ErrorPanelOptions = {}): void {
   if (typeof document === 'undefined') return;
   count++;
+  // an error repeating every frame must not rebuild the panel: keep the first one, update the count
+  if (panel && panel.isConnected && !o.fatal) {
+    let counter = panel.querySelector('.error-count');
+    if (!counter) {
+      counter = h('p', { class: 'error-count' });
+      panel.querySelector('.error-message')?.after(counter);
+    }
+    counter.textContent = `${count} errors so far`;
+    return;
+  }
   const { message, detail } = describe(error);
   panel?.remove();
   const close = () => {

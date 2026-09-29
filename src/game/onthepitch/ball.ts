@@ -22,6 +22,18 @@ const AXIS_Y = new Vector3(0, 1, 0);
 const AXIS_Z = new Vector3(0, 0, 1);
 const XZ = new Vector3(1, 0, 1);
 
+/** Vector3(x, y, z).GetLength() */
+function Length3(x: number, y: number, z: number): number {
+  let length = Math.sqrt(x * x + y * y + z * z);
+  if (length < 0.000001) length = 0;
+  return length;
+}
+
+/** the 'is null' test of Vector3.GetNormalized(ifNull) */
+function IsNull3(x: number, y: number, z: number): boolean {
+  return Math.abs(x) < 0.000001 && Math.abs(y) < 0.000001 && Math.abs(z) < 0.000001;
+}
+
 export class BallSpatialInfo {
   momentum: Vector3;
   rotation_ms: Quaternion;
@@ -204,19 +216,32 @@ export class Ball {
     this.CalculatePrediction();
   }
 
-  /** returns momentum in 10ms */
+  /**
+   * returns momentum in 10ms
+   *
+   * PORT: this is the hottest physics path (300 sub steps per call, called several times per 10ms
+   * step), so position and momentum are kept in scalars instead of immutable Vector3s. Every
+   * expression mirrors the Vector3 operation of the original (including the GetLength/GetNormalized
+   * near-zero rules), in the same evaluation order.
+   */
   CalculatePrediction(): BallSpatialInfo {
     let newMomentum = new Vector3(0);
     let newRotation_ms = Quaternion.IDENTITY;
 
     // fill predictions
 
-    let nextPos = this.positionBuffer;
+    // nextPos
+    let px = this.positionBuffer.coords[0];
+    let py = this.positionBuffer.coords[1];
+    let pz = this.positionBuffer.coords[2];
     let nextOrientation = this.orientationBuffer;
-    let momentumPredict = this.momentum;
+    // momentumPredict
+    let mx = this.momentum.coords[0];
+    let my = this.momentum.coords[1];
+    let mz = this.momentum.coords[2];
     let rotationPredict_ms = this.rotation_ms;
 
-    this.predictions[0] = nextPos;
+    this.predictions[0] = this.positionBuffer;
 
     const drag_enabled = true;
     const groundFriction_enabled = true;
@@ -246,50 +271,67 @@ export class Ball {
       // gravity
 
       // vz = vz0 + g * t
-      momentumPredict = momentumPredict.WithCoord(2, momentumPredict.coords[2] + gravity * timeStep);
+      mz = mz + gravity * timeStep;
 
       // air resistance
 
-      const momentumVelo = momentumPredict.GetLength();
+      const momentumVelo = Length3(mx, my, mz);
       const momentumVeloDragged = momentumVelo - drag * Math.pow(momentumVelo, 2.0) * timeStep;
-      if (drag_enabled) momentumPredict = momentumPredict.GetNormalized(0).Mul(momentumVeloDragged);
+      if (drag_enabled) {
+        // momentumPredict = momentumPredict.GetNormalized(0) * momentumVeloDragged
+        if (IsNull3(mx, my, mz)) {
+          mx = 0 * momentumVeloDragged;
+          my = 0 * momentumVeloDragged;
+          mz = 0 * momentumVeloDragged;
+        } else {
+          const f = 1.0 / Math.sqrt(mx * mx + my * my + mz * mz);
+          mx = mx * f * momentumVeloDragged;
+          my = my * f * momentumVeloDragged;
+          mz = mz * f * momentumVeloDragged;
+        }
+      }
 
-      const ballBottom = nextPos.coords[2] - 0.11;
+      const ballBottom = pz - 0.11;
       let grassInfluenceBias = clamp(1.0 - ballBottom / grassHeight, 0.0, 1.0); // 0 == no friction, 1 == all friction
       // todo: seems to cause 'feedback' on multibump (1st bump: ball gets lots of rotation. second bump: rotation makes ball accelerate too much)
       grassInfluenceBias = Math.pow(grassInfluenceBias, 0.7); // at half grass height, there's already a bigger amount of friction than 50%
 
       // bounce
 
-      if (nextPos.coords[2] < 0.11) {
-        if (momentumPredict.coords[2] < 0.0) {
-          frictionFactor = NormalizedClamp(-momentumPredict.coords[2] - 0.5, 0.0, 12.0); // when the ball is slammed into the ground, there's gonna be more friction. only set it here so it is only done once (on impact)
-          let mz = -momentumPredict.coords[2] * bounce;
+      if (pz < 0.11) {
+        if (mz < 0.0) {
+          frictionFactor = NormalizedClamp(-mz - 0.5, 0.0, 12.0); // when the ball is slammed into the ground, there's gonna be more friction. only set it here so it is only done once (on impact)
+          mz = -mz * bounce;
           mz = Math.max(mz - linearBounce, 0.0); // linear bounce
-          momentumPredict = momentumPredict.WithCoord(2, mz);
         }
 
-        nextPos = nextPos.WithCoord(2, 0.11);
+        pz = 0.11;
       }
 
       // ground friction
 
-      if (nextPos.coords[2] < 0.11 + grassHeight && groundFriction_enabled) {
+      if (pz < 0.11 + grassHeight && groundFriction_enabled) {
         const adaptedFriction = friction * grassInfluenceBias;
 
         // v(t) = v(0) * (k ^ t)
 
-        let xy = momentumPredict.Get2D();
-        const velo = xy.GetLength();
+        // xy = momentumPredict.Get2D()
+        const velo = Length3(mx, my, 0);
 
         let newVelo = velo - adaptedFriction * Math.pow(velo, 2.0) * timeStep;
 
         // linear friction
         newVelo = clamp(newVelo - linearFriction * grassInfluenceBias * timeStep, 0.0, 100000.0);
 
-        xy = xy.GetNormalized(new Vector3(0));
-        xy = xy.Mul(newVelo);
-        momentumPredict = new Vector3(xy.coords[0], xy.coords[1], momentumPredict.coords[2]);
+        // xy.Normalize(Vector3(0)); xy *= newVelo;
+        if (IsNull3(mx, my, 0)) {
+          mx = 0 * newVelo;
+          my = 0 * newVelo;
+        } else {
+          const f = 1.0 / Math.sqrt(mx * mx + my * my + 0 * 0);
+          mx = mx * f * newVelo;
+          my = my * f * newVelo;
+        }
       }
 
       let netAbsorbInv = 0.95;
@@ -301,9 +343,11 @@ export class Ball {
 
       netAbsorbInv = Math.pow(netAbsorbInv, timeStep * 100.0);
 
-      // woodwork
+      // woodwork (first sub step only, so plain Vector3 code)
 
       if (firstTime && woodwork_enabled) {
+        let nextPos = new Vector3(px, py, pz);
+        let momentumPredict = new Vector3(mx, my, mz);
         let woodwork = false;
 
         // posts
@@ -397,6 +441,13 @@ export class Ball {
           this.goalpostsound.SetGain(clamp(momentumPredict.GetLength() * 0.05, 0.01, 1.0) * 0.5 * GetConfiguration().GetReal('audio_volume', 0.5));
           this.goalpostsound.Poke();
         }
+
+        px = nextPos.coords[0];
+        py = nextPos.coords[1];
+        pz = nextPos.coords[2];
+        mx = momentumPredict.coords[0];
+        my = momentumPredict.coords[1];
+        mz = momentumPredict.coords[2];
       }
 
       // netting
@@ -405,23 +456,23 @@ export class Ball {
         const ballIsInGoal = this.match.IsBallInGoal();
         const inGoal = ballIsInGoal ? 1 : -1;
 
-        const behindBackline = Math.abs(nextPos.coords[0]) > pitchHalfW + 0.11;
-        const beforeGoalBack = Math.abs(nextPos.coords[0]) < pitchHalfW + goalDepth - 0.11;
-        const belowGoalHeight = nextPos.coords[2] < goalHeight + 0.11;
-        const betweenGoalWidth = Math.abs(nextPos.coords[1]) < goalHalfWidth - 0.11;
+        const behindBackline = Math.abs(px) > pitchHalfW + 0.11;
+        const beforeGoalBack = Math.abs(px) < pitchHalfW + goalDepth - 0.11;
+        const belowGoalHeight = pz < goalHeight + 0.11;
+        const betweenGoalWidth = Math.abs(py) < goalHalfWidth - 0.11;
 
         // side netting
 
         if (ballIsInGoal && !betweenGoalWidth && behindBackline) {
-          let netDist = Math.abs(Math.abs(nextPos.coords[1]) - goalHalfWidth);
+          let netDist = Math.abs(Math.abs(py) - goalHalfWidth);
           netDist = clamp(netDist, 0, 1);
-          const power = Math.pow(netDist, powFactor) * -signSide(nextPos.coords[1]) * inGoal;
+          const power = Math.pow(netDist, powFactor) * -signSide(py) * inGoal;
 
           // net is stuck to woodwork so lay off there
-          const woodworkTensionBiasInv = clamp((Math.abs(momentumPredict.coords[0]) - pitchHalfW) * 2.0, 0.0, 1.0);
+          const woodworkTensionBiasInv = clamp((Math.abs(mx) - pitchHalfW) * 2.0, 0.0, 1.0);
           const adaptedPowerFac = powerFac + (1.0 - woodworkTensionBiasInv) * 3.0;
 
-          momentumPredict = momentumPredict.WithCoord(1, momentumPredict.coords[1] * netAbsorbInv + power * adaptedPowerFac * (100 * timeStep));
+          my = my * netAbsorbInv + power * adaptedPowerFac * (100 * timeStep);
 
           if (predictTime_ms === 10) this.ballTouchesNet = true;
         }
@@ -429,10 +480,10 @@ export class Ball {
         // rear netting
 
         if (ballIsInGoal && !beforeGoalBack && behindBackline) {
-          let netDist = Math.abs(Math.abs(nextPos.coords[0]) - (pitchHalfW + goalDepth));
+          let netDist = Math.abs(Math.abs(px) - (pitchHalfW + goalDepth));
           netDist = clamp(netDist, 0, 1);
-          const power = Math.pow(netDist, powFactor) * -signSide(nextPos.coords[0]) * inGoal;
-          momentumPredict = momentumPredict.WithCoord(0, momentumPredict.coords[0] * netAbsorbInv + power * powerFac * (100 * timeStep));
+          const power = Math.pow(netDist, powFactor) * -signSide(px) * inGoal;
+          mx = mx * netAbsorbInv + power * powerFac * (100 * timeStep);
 
           if (predictTime_ms === 10) this.ballTouchesNet = true;
         }
@@ -441,15 +492,15 @@ export class Ball {
 
         if (ballIsInGoal && !belowGoalHeight && behindBackline) {
           // todo: from above. so hard to code. wow.
-          let netDist = Math.abs(Math.abs(nextPos.coords[2]) - goalHeight);
+          let netDist = Math.abs(Math.abs(pz) - goalHeight);
           netDist = clamp(netDist, 0, 1);
           const power = Math.pow(netDist, powFactor) * -inGoal;
 
           // net is stuck to woodwork so lay off there
-          const woodworkTensionBiasInv = clamp((Math.abs(momentumPredict.coords[0]) - pitchHalfW) * 2.0, 0.0, 1.0);
+          const woodworkTensionBiasInv = clamp((Math.abs(mx) - pitchHalfW) * 2.0, 0.0, 1.0);
           const adaptedPowerFac = powerFac + (1.0 - woodworkTensionBiasInv) * 3.0;
 
-          momentumPredict = momentumPredict.WithCoord(2, momentumPredict.coords[2] * netAbsorbInv + power * adaptedPowerFac * (100 * timeStep));
+          mz = mz * netAbsorbInv + power * adaptedPowerFac * (100 * timeStep);
 
           if (predictTime_ms === 10) this.ballTouchesNet = true;
         }
@@ -457,15 +508,15 @@ export class Ball {
 
       // calculate rotation
 
-      if (nextPos.coords[2] < 0.11 + grassHeight && groundRotationEffects_enabled) {
+      if (pz < 0.11 + grassHeight && groundRotationEffects_enabled) {
         // rewrite idea: find out difference in ball velo / roll velo and then change both ball velo and rot (instead of having these 2 seperate sections)
 
         // ground friction induced rotation
 
         // x movement causes roll over y axis.. so this is correct ;)
         const radius = 0.11;
-        const xR = momentumPredict.coords[1] / radius;
-        const yR = momentumPredict.coords[0] / radius;
+        const xR = my / radius;
+        const yR = mx / radius;
 
         // clamp, because we can not rotate faster than this or the maths don't know what direction to rotate into anymore
         const rotX = Quaternion.FromAngleAxis(clamp(xR * 0.001, -pi * 0.49, pi * 0.49), AXIS_X_NEG);
@@ -512,42 +563,67 @@ export class Ball {
           rotBias += 0.5 * frictionFactor;
         }
         rotBias = clamp(rotBias, 0.0, 1.0);
-        momentumPredict = new Vector3(
-          momentumPredict.coords[0] * (1.0 - rotBias) + ballRotationMomentum0 * rotBias,
-          momentumPredict.coords[1] * (1.0 - rotBias) + ballRotationMomentum1 * rotBias,
-          momentumPredict.coords[2],
-        );
+        mx = mx * (1.0 - rotBias) + ballRotationMomentum0 * rotBias;
+        my = my * (1.0 - rotBias) + ballRotationMomentum1 * rotBias;
 
         // finally, add the previously calculated ground friction induced rotation
         rotationPredict_ms = newRotationPredict_ms;
       }
 
+      // PORT: the C++ called rotationPredict_ms.GetAngles() for the swerve and again (unchanged
+      // rotation) for the orientation step below; computed once here
+      const rotationAngles = rotationPredict_ms.GetAngles();
+
       // magnus effect (swerve)
 
       if (swerve_enabled) {
-        const a = rotationPredict_ms.GetAngles();
-        let rotVec = new Vector3(a.X, a.Y, a.Z);
-        rotVec = rotVec.Mul(10.0);
+        const rotVecX = rotationAngles.X * 10.0;
+        const rotVecY = rotationAngles.Y * 10.0;
+        const rotVecZ = rotationAngles.Z * 10.0;
 
         // magnus effect has a strength curve that goes down after a certain velocity
-        let swerveAmount = NormalizedClamp(momentumPredict.GetLength(), 0.0, 70.0);
+        let swerveAmount = NormalizedClamp(Length3(mx, my, mz), 0.0, 70.0);
         // http://www.wolframalpha.com/input/?i=sin%28x+*+pi+*+0.7%29+^+2.2+from+x+%3D+0+to+1
         // <bazkie_drunk> ^ tnx, past myself, that's very convenient!
         swerveAmount = Math.pow(Math.sin(swerveAmount * pi * 0.94), 2.6);
-        const adaptedMomentumPredict = momentumPredict.GetNormalized(0).Mul(swerveAmount * 30.0);
 
-        const swerve = adaptedMomentumPredict.GetCrossProduct(rotVec.Neg()).Mul(1.0);
+        // adaptedMomentumPredict = momentumPredict.GetNormalized(0) * swerveAmount * 30.0f
+        const adaptedFactor = swerveAmount * 30.0;
+        let ax: number;
+        let ay: number;
+        let az: number;
+        if (IsNull3(mx, my, mz)) {
+          ax = 0 * adaptedFactor;
+          ay = 0 * adaptedFactor;
+          az = 0 * adaptedFactor;
+        } else {
+          const f = 1.0 / Math.sqrt(mx * mx + my * my + mz * mz);
+          ax = mx * f * adaptedFactor;
+          ay = my * f * adaptedFactor;
+          az = mz * f * adaptedFactor;
+        }
 
-        momentumPredict = momentumPredict.Add(swerve.Mul(timeStep));
+        // swerve = adaptedMomentumPredict.GetCrossProduct(-rotVec) * 1.0
+        const nrx = -rotVecX;
+        const nry = -rotVecY;
+        const nrz = -rotVecZ;
+        const sx = (ay * nrz - az * nry) * 1.0;
+        const sy = (az * nrx - ax * nrz) * 1.0;
+        const sz = (ax * nry - ay * nrx) * 1.0;
+
+        mx = mx + sx * timeStep;
+        my = my + sy * timeStep;
+        mz = mz + sz * timeStep;
       }
 
       // predict next ms
 
-      nextPos = nextPos.Add(momentumPredict.Mul(timeStep));
+      px = px + mx * timeStep;
+      py = py + my * timeStep;
+      pz = pz + mz * timeStep;
 
-      const r = rotationPredict_ms.GetAngles();
-      const rotationVector = new Vector3(r.X, r.Y, r.Z).Mul(timeStep / 0.001);
-      const rotationPredictTimeStepped = Quaternion.FromAngles(rotationVector.coords[0], rotationVector.coords[1], rotationVector.coords[2]);
+      const rotationFactor = timeStep / 0.001;
+      const rotationPredictTimeStepped = Quaternion.FromAngles(rotationAngles.X * rotationFactor, rotationAngles.Y * rotationFactor, rotationAngles.Z * rotationFactor);
 
       nextOrientation = rotationPredictTimeStepped.Mul(nextOrientation);
 
@@ -557,11 +633,11 @@ export class Ball {
           if (predictTime_ms === 200) timeStep = 0.01;
         }
 
-        this.predictions[predictTime_ms / 10] = nextPos;
+        this.predictions[predictTime_ms / 10] = new Vector3(px, py, pz);
       }
 
       if (predictTime_ms === 10) {
-        newMomentum = momentumPredict;
+        newMomentum = new Vector3(mx, my, mz);
         newRotation_ms = rotationPredict_ms;
         this.orientPrediction = nextOrientation;
       }

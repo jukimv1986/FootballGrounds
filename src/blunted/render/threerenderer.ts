@@ -335,7 +335,8 @@ export class ThreeRenderer {
     if (camera) {
       this.SetupCamera(camera);
       this.SetupEnvironment();
-      if (this.shadowLight && this.shadowLight.three.castShadow) this.FitShadowCamera(this.shadowLight);
+      const shadowLight = this.shadowLight as LightEntry | null; // set by Walk()
+      if (shadowLight && shadowLight.three.castShadow) this.FitShadowCamera(shadowLight);
       r.render(this.scene, this.camera);
     } else {
       r.clear();

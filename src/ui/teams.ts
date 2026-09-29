@@ -185,7 +185,9 @@ export function leagueBadge(logo: string, name: string, className = ''): HTMLEle
  * (shirt front at 0,0 - 512x580, shorts at 5,587 - 546x181).
  */
 export function kitPreview(team: TeamRecord, kitNum: number, className = ''): HTMLElement {
-  const url = kitTextureUrl(team, kitNum);
+  // absolute: a relative url() inside a custom property resolves against the stylesheet using it
+  const relative = kitTextureUrl(team, kitNum);
+  const url = relative ? new URL(relative, document.baseURI).href : '';
   const style = url ? `--kit: url("${url}")` : `--kit: none; --kit-fallback: ${kitNum === 2 ? cssColor(team.color2) : cssColor(team.color1)}`;
   return h('span', { class: `kit ${className}`, style, 'aria-hidden': 'true' }, h('span', { class: 'kit-shirt' }), h('span', { class: 'kit-shorts' }));
 }

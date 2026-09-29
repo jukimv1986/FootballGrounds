@@ -41,14 +41,15 @@ let pitchRedToBlueRatio = 0.5;
 
 /** C++ SDL_MapRGB: float components are converted to Uint8 (truncated) */
 function SDL_MapRGB(r: number, g: number, b: number): number {
-  return (((Math.trunc(r) & 255) << 16) | ((Math.trunc(g) & 255) << 8) | (Math.trunc(b) & 255)) >>> 0;
+  // `| 0` truncates like the C++ float -> Uint8 conversion (values are within 0 .. 255)
+  return ((((r | 0) & 255) << 16) | (((g | 0) & 255) << 8) | ((b | 0) & 255)) >>> 0;
 }
 
-/** C++ BilinearSample<float> */
+/** C++ BilinearSample<float>. (`| 0` == C++ int(): the sample coordinates are always in int range) */
 function BilinearSample(tex: Float32Array, x: number, y: number, w: number, h: number): number {
   // actual bilinear version
-  const intX1 = Math.trunc(Math.floor(x));
-  const intY1 = Math.trunc(Math.floor(y));
+  const intX1 = Math.floor(x) | 0;
+  const intY1 = Math.floor(y) | 0;
   const intX2 = (intX1 + 1) % w;
   const intY2 = (intY1 + 1) % h;
   const x1y1 = tex[intY1 * w + intX1];
@@ -60,10 +61,15 @@ function BilinearSample(tex: Float32Array, x: number, y: number, w: number, h: n
   return (x1y1 * (1.0 - xBias) + x2y1 * xBias) * (1.0 - yBias) + (x1y2 * (1.0 - xBias) + x2y2 * xBias) * yBias;
 }
 
-/** C++ BilinearSample<Vector3>: tex holds 3 floats per texel, result is written to out[0..2] */
-function BilinearSample3(tex: Float32Array, x: number, y: number, w: number, h: number, out: number[]): void {
-  const intX1 = Math.trunc(Math.floor(x));
-  const intY1 = Math.trunc(Math.floor(y));
+/** result of BilinearSample3 */
+let sample0 = 0;
+let sample1 = 0;
+let sample2 = 0;
+
+/** C++ BilinearSample<Vector3>: tex holds 3 floats per texel, the result is stored in sample0..2 */
+function BilinearSample3(tex: Float32Array, x: number, y: number, w: number, h: number): void {
+  const intX1 = Math.floor(x) | 0;
+  const intY1 = Math.floor(y) | 0;
   const intX2 = (intX1 + 1) % w;
   const intY2 = (intY1 + 1) % h;
   const i11 = (intY1 * w + intX1) * 3;
@@ -72,14 +78,12 @@ function BilinearSample3(tex: Float32Array, x: number, y: number, w: number, h: 
   const i22 = (intY2 * w + intX2) * 3;
   const xBias = x - intX1;
   const yBias = y - intY1;
-  for (let c = 0; c < 3; c++) {
-    out[c] =
-      (tex[i11 + c] * (1.0 - xBias) + tex[i21 + c] * xBias) * (1.0 - yBias) +
-      (tex[i12 + c] * (1.0 - xBias) + tex[i22 + c] * xBias) * yBias;
-  }
+  const xBiasInv = 1.0 - xBias;
+  const yBiasInv = 1.0 - yBias;
+  sample0 = (tex[i11] * xBiasInv + tex[i21] * xBias) * yBiasInv + (tex[i12] * xBiasInv + tex[i22] * xBias) * yBias;
+  sample1 = (tex[i11 + 1] * xBiasInv + tex[i21 + 1] * xBias) * yBiasInv + (tex[i12 + 1] * xBiasInv + tex[i22 + 1] * xBias) * yBias;
+  sample2 = (tex[i11 + 2] * xBiasInv + tex[i21 + 2] * xBias) * yBiasInv + (tex[i12 + 2] * xBiasInv + tex[i22 + 2] * xBias) * yBias;
 }
-
-const sampleScratch = [0, 0, 0];
 
 /** returns a packed 0xRRGGBB color. PORT: pitchSurf (only used for its pixel format in C++) is unused. */
 export function GetPitchDiffuseColor(_pitchSurf: Surface | null, xCoord: number, yCoord: number): number {
@@ -99,11 +103,10 @@ export function GetPitchDiffuseColor(_pitchSurf: Surface | null, xCoord: number,
   let seamlessY = ((yCoord / pitchFullHalfH) * 0.5 + 0.5) * seamlessTexH * 12.0 * texScale;
   seamlessX = seamlessX % seamlessTexW;
   seamlessY = seamlessY % seamlessTexH;
-  const tex = sampleScratch;
-  BilinearSample3(seamlessTex, seamlessX, seamlessY, seamlessTexW, seamlessTexH, tex);
-  r = r * (1.0 - texMultiplier) + tex[0] * texMultiplier;
-  g = g * (1.0 - texMultiplier) + tex[1] * texMultiplier;
-  b = b * (1.0 - texMultiplier) + tex[2] * texMultiplier;
+  BilinearSample3(seamlessTex, seamlessX, seamlessY, seamlessTexW, seamlessTexH);
+  r = r * (1.0 - texMultiplier) + sample0 * texMultiplier;
+  g = g * (1.0 - texMultiplier) + sample1 * texMultiplier;
+  b = b * (1.0 - texMultiplier) + sample2 * texMultiplier;
 
   let perlX = ((xCoord / pitchFullHalfW) * 0.5 + 0.5) * perlinTexW;
   let perlY = ((yCoord / pitchFullHalfH) * 0.5 + 0.5) * perlinTexH;
@@ -136,12 +139,11 @@ export function GetPitchDiffuseColor(_pitchSurf: Surface | null, xCoord: number,
 
   const overlayX = ((xCoord / pitchFullHalfW) * 0.5 + 0.5) * overlayTexW;
   const overlayY = ((yCoord / pitchFullHalfH) * 0.5 + 0.5) * overlayTexH;
-  const overlay = sampleScratch;
-  BilinearSample3(overlayTex, overlayX, overlayY, overlayTexW, overlayTexH, overlay);
+  BilinearSample3(overlayTex, overlayX, overlayY, overlayTexW, overlayTexH);
   const overlay_alpha = BilinearSample(overlay_alphaTex, overlayX, overlayY, overlayTexW, overlayTexH);
-  r = clamp(r * (1.0 - overlay_alpha) + overlay[0] * overlay_alpha, 0, 255);
-  g = clamp(g * (1.0 - overlay_alpha) + overlay[1] * overlay_alpha, 0, 255);
-  b = clamp(b * (1.0 - overlay_alpha) + overlay[2] * overlay_alpha, 0, 255);
+  r = clamp(r * (1.0 - overlay_alpha) + sample0 * overlay_alpha, 0, 255);
+  g = clamp(g * (1.0 - overlay_alpha) + sample1 * overlay_alpha, 0, 255);
+  b = clamp(b * (1.0 - overlay_alpha) + sample2 * overlay_alpha, 0, 255);
 
   return SDL_MapRGB(r, g, b);
 }

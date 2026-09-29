@@ -261,6 +261,9 @@ export class Animation {
 
   protected cache_AnimType = '';
 
+  /** PORT: bumped whenever cached values or variables may have changed (lets users like AnimCollection memoize derived data) */
+  protected changeCount = 0;
+
   /**
    * C++ Animation() and Animation(const Animation &src).
    * attention! the copy does not deep copy extensions! (shallow copy, like the original)
@@ -325,6 +328,7 @@ export class Animation {
 
   DirtyCache(): void {
     // hee hee
+    this.changeCount++;
     this.cache_translation_dirty = true;
     this.cache_incomingMovement_dirty = true;
     this.cache_incomingVelocity_dirty = true;
@@ -337,6 +341,11 @@ export class Animation {
     this.cache_outgoingBodyAngle_dirty = true;
     this.cache_incomingBodyDirection_dirty = true;
     this.cache_outgoingBodyDirection_dirty = true;
+  }
+
+  /** PORT: see changeCount */
+  GetChangeCount(): number {
+    return this.changeCount;
   }
 
   GetFrameCount(): number {
@@ -1118,6 +1127,7 @@ export class Animation {
     this.cache_AnimType = this.variableCache.get('type') ?? '';
 
     this.ConvertToStartFacingForwardIfIdle();
+    this.changeCount++;
   }
 
   /** PORT: the C++ wrote the file to disk; here it is stored in the in-memory FileSystem and the text is returned */
@@ -1243,6 +1253,7 @@ export class Animation {
   }
 
   SetVariable(name: string, value: string): void {
+    this.changeCount++;
     if (this.customData) {
       const tree = this.customData.Find(name);
       if (tree !== undefined) {

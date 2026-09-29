@@ -1,7 +1,7 @@
 // Match options (C++ menu/startmatch/matchoptions): difficulty and match duration sliders, saved
 // as the defaults (config match_difficulty / match_duration), then kick-off.
 
-import { GetConfiguration } from '../../game/globals';
+import { GetConfiguration, GetDB } from '../../game/globals';
 import { _default_Difficulty, _default_MatchDuration } from '../../game/gamedefines';
 import { SaveConfiguration } from '../config';
 import { h } from '../dom';
@@ -9,7 +9,6 @@ import { withNav } from '../nav';
 import { back, type Screen } from '../router';
 import { getTeamInfo, kitPreview, teamCrest } from '../teams';
 import { HINT_BACK, HINT_NAVIGATE, HINT_SELECT, button, screenFrame, sliderRow } from '../widgets';
-import { GetDB } from '../../game/globals';
 import { QUICKMATCH_STEPS, launchQuickMatch, type QuickMatchSetup } from './quickmatch';
 import { listControllers } from './controllerselect';
 

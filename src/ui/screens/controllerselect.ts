@@ -189,7 +189,7 @@ export function createControllerSelectScreen(setup: QuickMatchSetup): Screen {
         header,
         rows,
         summary,
-        h('p', { class: 'ctrl-tip muted' }, 'Connect a gamepad and press a button to add it. Move controllers with ← → (each gamepad moves its own card).'),
+        h('p', { class: 'ctrl-tip muted' }, 'Tap a column or use ← → to move a controller; each gamepad moves its own card. Connect a gamepad and press a button to add it.'),
       ),
     ],
     hints: [{ keys: ['↑', '↓'], pad: ['✥'], label: 'Controller' }, { keys: ['←', '→'], pad: ['◀', '▶'], label: 'Choose side' }, HINT_SELECT, HINT_BACK],

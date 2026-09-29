@@ -226,10 +226,16 @@ const ABILITY_TABLE: Record<Position, number[]> = Object.fromEntries(
 function abilityFromWeightedMean(pos: Position, wm: number): number {
   const t = ABILITY_TABLE[pos];
   if (wm <= t[0]) return 0;
-  for (let i = 1; i < t.length; i++) {
-    if (wm <= t[i]) return (i - 1 + (wm - t[i - 1]) / Math.max(1e-9, t[i] - t[i - 1])) / 100;
+  if (wm >= t[t.length - 1]) return 1.5;
+  // binary search for the first entry >= wm (table is monotonic)
+  let lo = 1;
+  let hi = t.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (t[mid] >= wm) hi = mid;
+    else lo = mid + 1;
   }
-  return 1.5;
+  return (lo - 1 + (wm - t[lo - 1]) / Math.max(1e-9, t[lo] - t[lo - 1])) / 100;
 }
 
 const OVR_CURVE: [number, number][] = [

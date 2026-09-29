@@ -8,6 +8,7 @@
 //   split=0                   don't split the stadium into 24 m chunks (the match does)
 //   anim=0                    no per-frame vertex animation of the player bodies
 //   hud=0                     hide the stats overlay
+//   pitch=0                   keep the 16x16 placeholder pitch textures
 //   sun=x,y,z                 sun direction (default: Match::SetRandomSunParams' "sane default")
 //
 // window.__renderTest exposes hooks for automated tests (Playwright): ready, setView(), benchmark().
@@ -27,6 +28,7 @@ import { Scene3D } from '../blunted/scene/scene3d';
 import { e_LocalMode, e_ObjectType } from '../blunted/scene/spatial';
 import { ObjectLoader } from '../blunted/utils/objectloader';
 import { SplitGeometry } from '../game/utils/splitgeometry';
+import { GenerateTestPitch } from './testpitch';
 
 const params = new URLSearchParams(location.search);
 const hud = document.getElementById('hud') as HTMLDivElement;
@@ -230,6 +232,8 @@ async function Main(): Promise<void> {
   stadium.SetLocalMode(e_LocalMode.e_LocalMode_Absolute);
   scene.AddNode(stadium);
 
+  if (params.get('pitch') !== '0') GenerateTestPitch();
+
   const goals = loader.LoadObject('media/objects/stadiums/goals.object');
   goals.SetLocalMode(e_LocalMode.e_LocalMode_Absolute);
   scene.AddNode(goals);
@@ -321,7 +325,7 @@ async function Main(): Promise<void> {
   // ball (its geometry is in absolute local mode, so the object itself is moved)
   const ballNode = loader.LoadObject('media/objects/balls/generic.object');
   scene.AddNode(ballNode);
-  const ball = ballNode.GetObject('generic ball') as Geometry;
+  const ball = ballNode.GetObjects<Geometry>(e_ObjectType.e_ObjectType_Geometry)[0];
   ball.SetPosition(new Vector3(-1.2, 0.8, 0.11));
 
   // camera

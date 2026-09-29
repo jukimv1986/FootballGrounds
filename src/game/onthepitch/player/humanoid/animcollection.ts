@@ -607,23 +607,157 @@ export function SmoothPositions(animation: Animation, convertAngledDribbleToWalk
   }
 }
 
-/** per-animation memo of parsed vector variables, for CrudeSelection (keyed by the source string, so it stays exact) */
-class ParsedVectorVariable {
-  source: string | null = null;
-  value: Vector3 = Vector3.ZERO;
-}
+/**
+ * PORT: per-animation values that CrudeSelection needs. The C++ recomputed these (string compares, map
+ * lookups, string -> vector parsing, vector math) for every animation on every query; here they are
+ * derived once, with exactly the same expressions, and recomputed whenever the animation changes
+ * (Animation.GetChangeCount()).
+ */
+class AnimSelectionData {
+  animation: Animation | null = null;
+  changeCount = -1;
 
-class AnimSelectionCache {
-  incomingBallDirection = new ParsedVectorVariable();
-  ballDirection = new ParsedVectorVariable();
-}
+  /** index of GetAnimType() in defString, -1 when it is none of them (they are all distinct) */
+  typeDefString = -1;
+  isDeflect = false;
 
-function GetParsedVector(parsed: ParsedVectorVariable, source: string): Vector3 {
-  if (parsed.source !== source) {
-    parsed.source = source;
-    parsed.value = GetVectorFromString(source);
+  incomingVelocity: e_Velocity = e_Velocity.e_Velocity_Idle;
+  outgoingVelocity: e_Velocity = e_Velocity.e_Velocity_Idle;
+  /** RangeVelocity(in/outgoing velocity), with dribble treated as walk (incomingVelocity_ForceLinearity) */
+  incomingVelocityLinear = 0;
+  outgoingVelocityLinear = 0;
+
+  incomingBodyDirection: Vector3 = Vector3.ZERO;
+  /** GetOutgoingDirection().GetRotated2D(GetOutgoingBodyAngle()) */
+  outgoingDirectionBodyRotated: Vector3 = Vector3.ZERO;
+  /** outgoingDirectionBodyRotated.GetAngle2D(incomingBodyDirection) */
+  turnAngle = 0;
+  /** fabs(FixAngle(GetIncomingBodyDirection().GetAngle2D())) */
+  incomingBodyAngleFixedAbs = 0;
+  /** absolute outgoing body dir is body dir + outgoing dir */
+  outgoingBodyDir: Vector3 = Vector3.ZERO;
+
+  outgoingRetainStateEmpty = true;
+  lastDitch = false;
+
+  incomingBallDirectionLength = 0;
+  /** incoming ball direction with decimated height diff, normalized (only valid when its length != 0) */
+  incomingBallDirectionAdapted: Vector3 = Vector3.ZERO;
+  incomingBallDirectionMaxDeviation = 0;
+  /** outgoing ball direction, normalized (0 if none) */
+  ballDirection: Vector3 = Vector3.ZERO;
+  outgoingBallDirectionMaxDeviation = 0;
+
+  incomingSpecialState = '';
+  incomingRetainState = '';
+  specialVar1 = 0;
+  specialVar2 = 0;
+  tripType = 0;
+
+  /** forced foot: 0 = none, 1 = strong, 2 = weak */
+  forcedFootWhich = 0;
+  forcedFootAnimFoot: e_Foot = e_Foot.e_Foot_Right;
+
+  Update(animation: Animation, defString: string[], maxIncomingBallDirectionDeviation: radian, maxOutgoingBallDirectionDeviation: radian): void {
+    this.animation = animation;
+    this.changeCount = animation.GetChangeCount();
+
+    const animType = animation.GetAnimType();
+    this.typeDefString = defString.indexOf(animType);
+    this.isDeflect = animType === defString[e_DefString.e_DefString_Deflect];
+
+    this.incomingVelocity = FloatToEnumVelocity(animation.GetIncomingVelocity());
+    this.outgoingVelocity = FloatToEnumVelocity(animation.GetOutgoingVelocity());
+    let animIncomingVelocityFloat = RangeVelocity(animation.GetIncomingVelocity());
+    let animOutgoingVelocityFloat = RangeVelocity(animation.GetOutgoingVelocity());
+    // treat dribble and walk the same
+    if (FloatToEnumVelocity(animIncomingVelocityFloat) === e_Velocity.e_Velocity_Dribble) animIncomingVelocityFloat = walkVelocity;
+    if (FloatToEnumVelocity(animOutgoingVelocityFloat) === e_Velocity.e_Velocity_Dribble) animOutgoingVelocityFloat = walkVelocity;
+    this.incomingVelocityLinear = animIncomingVelocityFloat;
+    this.outgoingVelocityLinear = animOutgoingVelocityFloat;
+
+    this.incomingBodyDirection = animation.GetIncomingBodyDirection();
+    this.outgoingDirectionBodyRotated = animation.GetOutgoingDirection().GetRotated2D(animation.GetOutgoingBodyAngle());
+    this.turnAngle = this.outgoingDirectionBodyRotated.GetAngle2D(this.incomingBodyDirection);
+    this.incomingBodyAngleFixedAbs = Math.abs(FixAngle(animation.GetIncomingBodyDirection().GetAngle2D()));
+    this.outgoingBodyDir = downVector.GetRotated2D(animation.GetOutgoingBodyAngle() + animation.GetOutgoingAngle());
+
+    this.outgoingRetainStateEmpty = animation.GetVariable('outgoing_retain_state') === '';
+    this.lastDitch = animation.GetVariable('lastditch') === 'true';
+
+    const animIncomingBallDirection = GetVectorFromString(animation.GetVariable('incomingballdirection'));
+    this.incomingBallDirectionLength = animIncomingBallDirection.GetLength();
+    this.incomingBallDirectionAdapted =
+      this.incomingBallDirectionLength !== 0.0 ? animIncomingBallDirection.WithCoord(2, animIncomingBallDirection.coords[2] * 0.4).GetNormalized() : Vector3.ZERO;
+    let maxIncomingDeviation = Math.abs(atof(animation.GetVariable('incomingballdirection_maxdeviation')) * pi);
+    if (maxIncomingDeviation === 0.0) {
+      maxIncomingDeviation = maxIncomingBallDirectionDeviation; //0.45f;
+      if (this.isDeflect) maxIncomingDeviation = 0.4 * pi;
+    }
+    this.incomingBallDirectionMaxDeviation = maxIncomingDeviation;
+
+    this.ballDirection = GetVectorFromString(animation.GetVariable('balldirection')).GetNormalized(Vector3.ZERO);
+    let maxOutgoingDeviation = Math.abs(atof(animation.GetVariable('outgoingballdirection_maxdeviation')) * pi);
+    if (maxOutgoingDeviation === 0.0) {
+      maxOutgoingDeviation = maxOutgoingBallDirectionDeviation;
+    }
+    this.outgoingBallDirectionMaxDeviation = maxOutgoingDeviation;
+
+    this.incomingSpecialState = animation.GetVariable('incoming_special_state');
+    this.incomingRetainState = animation.GetVariable('incoming_retain_state');
+    this.specialVar1 = atof(animation.GetVariable('specialvar1'));
+    this.specialVar2 = atof(animation.GetVariable('specialvar2'));
+    this.tripType = Math.trunc(cround(atof(animation.GetVariable('triptype'))));
+
+    const forcedFoot = animation.GetVariable('forcedfoot');
+    let which = 0;
+    if (forcedFoot === 'strong') which = 1;
+    else if (forcedFoot === 'weak') which = 2;
+    this.forcedFootWhich = which;
+    const touchFoot = animation.GetVariable('touchfoot');
+    let animFoot = e_Foot.e_Foot_Right;
+    if (touchFoot === 'left') animFoot = e_Foot.e_Foot_Left;
+    // for mirrored anims that, therefore, don't start with right foot
+    if (animation.GetCurrentFoot() === e_Foot.e_Foot_Left) {
+      if (animFoot === e_Foot.e_Foot_Left) animFoot = e_Foot.e_Foot_Right;
+      else animFoot = e_Foot.e_Foot_Left;
+    }
+    this.forcedFootAnimFoot = animFoot;
   }
-  return parsed.value;
+}
+
+/** e_FunctionType -> the defString an anim type must equal (AnimCollection::_CheckFunctionType), -1 = never */
+function FunctionTypeDefString(queryFunctionType: e_FunctionType): number {
+  switch (queryFunctionType) {
+    case e_FunctionType.e_FunctionType_Movement:
+      return e_DefString.e_DefString_Movement;
+    case e_FunctionType.e_FunctionType_BallControl:
+      return e_DefString.e_DefString_BallControl;
+    case e_FunctionType.e_FunctionType_Trap:
+      return e_DefString.e_DefString_Trap;
+    case e_FunctionType.e_FunctionType_ShortPass:
+      return e_DefString.e_DefString_ShortPass;
+    case e_FunctionType.e_FunctionType_LongPass:
+      return e_DefString.e_DefString_LongPass;
+    case e_FunctionType.e_FunctionType_HighPass:
+      return e_DefString.e_DefString_HighPass;
+    case e_FunctionType.e_FunctionType_Shot:
+      return e_DefString.e_DefString_Shot;
+    case e_FunctionType.e_FunctionType_Deflect:
+      return e_DefString.e_DefString_Deflect;
+    case e_FunctionType.e_FunctionType_Catch:
+      return e_DefString.e_DefString_Catch;
+    case e_FunctionType.e_FunctionType_Interfere:
+      return e_DefString.e_DefString_Interfere;
+    case e_FunctionType.e_FunctionType_Trip:
+      return e_DefString.e_DefString_Trip;
+    case e_FunctionType.e_FunctionType_Sliding:
+      return e_DefString.e_DefString_Sliding;
+    case e_FunctionType.e_FunctionType_Special:
+      return e_DefString.e_DefString_Special;
+    default:
+      return -1;
+  }
 }
 
 export class AnimCollection {
@@ -638,7 +772,7 @@ export class AnimCollection {
   protected maxOutgoingBallDirectionDeviation: radian;
 
   /** PORT: CrudeSelection memo (parallel to animations) */
-  protected selectionCache: AnimSelectionCache[] = [];
+  protected selectionData: AnimSelectionData[] = [];
 
   /** scene3D for debugging pilon */
   constructor(scene3D: Scene3D) {
@@ -723,7 +857,7 @@ export class AnimCollection {
   Clear(): void {
     for (const animation of this.animations) animation.Exit();
     this.animations = [];
-    this.selectionCache = [];
+    this.selectionData = [];
   }
 
   /** C++ Load(boost::filesystem::path directory), e.g. Load("media/animations") */
@@ -825,19 +959,27 @@ export class AnimCollection {
 
   /** makes a crude selection to later refine; pushes the indices of the matching animations into dataSet */
   CrudeSelection(dataSet: DataSet, query: CrudeSelectionQuery): void {
-    // PORT: loop-invariant query values are computed once, before the loop (the C++ recomputed them per anim)
-    const fencedDirection = query.lookAtVecRel.GetRotated2D(pi);
+    // PORT: loop-invariant query values are computed once, and per-animation values come from the
+    // AnimSelectionData memo; the selection logic and its order are unchanged.
+    const queryTypeDefString = FunctionTypeDefString(query.functionType);
+    const fencedDirection = query.lookAtVecRel.GetRotated2D(pi); // anim should not pass through opposite (180 deg) of desired look angle
     const queryIncomingBodyAngleFixedAbs = Math.abs(FixAngle(query.incomingBodyDirection.GetAngle2D()));
     const queryIncomingBodyAngleToDown = Math.abs(downVector.GetAngle2D(query.incomingBodyDirection));
+    const queryIncomingToFenceAngle = fencedDirection.GetAngle2D(query.incomingBodyDirection);
+    const queryIncomingToFenceSide = queryIncomingToFenceAngle > 0 ? e_Side.e_Side_Left : e_Side.e_Side_Right;
     const checkIncomingBodyDirection = query.byIncomingBodyDirection === true && !(query.byIncomingVelocity === true && query.incomingVelocity === e_Velocity.e_Velocity_Idle);
 
-    let adaptedIncomingBallDirection = Vector3.ZERO;
+    let queryVelocityLinear = EnumToFloatVelocity(query.incomingVelocity);
+    if (FloatToEnumVelocity(queryVelocityLinear) === e_Velocity.e_Velocity_Dribble) queryVelocityLinear = walkVelocity; // treat dribble and walk the same
+
     const queryIncomingBallDirectionLength = query.incomingBallDirection.GetLength();
+    let adaptedIncomingBallDirection = Vector3.ZERO;
     if (query.byIncomingBallDirection === true && queryIncomingBallDirectionLength !== 0.0) {
       // decimate height diff
       adaptedIncomingBallDirection = query.incomingBallDirection.WithCoord(2, query.incomingBallDirection.coords[2] * 0.4).GetNormalized();
     }
 
+    // query.outgoingBallDirection.Get2D().GetNormalized(animBallDirection)
     const queryOutgoingBallDirection2D = query.outgoingBallDirection.Get2D();
     const oc = queryOutgoingBallDirection2D.coords;
     const queryOutgoingBallDirection2DIsNull = Math.abs(oc[0]) < 0.000001 && Math.abs(oc[1]) < 0.000001 && Math.abs(oc[2]) < 0.000001;
@@ -845,19 +987,17 @@ export class AnimCollection {
 
     const queryIncomingSpecialState = query.properties.Get('incoming_special_state');
     const queryIncomingRetainState = query.properties.Get('incoming_retain_state');
+    const queryHasIncomingRetainState = queryIncomingRetainState !== '';
     const querySpecialVar1 = atof(query.properties.Get('specialvar1'));
     const querySpecialVar2 = atof(query.properties.Get('specialvar2'));
     const queryIsDeflect = query.functionType === e_FunctionType.e_FunctionType_Deflect;
-    const queryHasIncomingRetainState = queryIncomingRetainState !== '';
 
     const marginRadians = 0.06 * pi; // anims can deviate a few degrees from the desired (quantized) directions
-    const deflectString = this.defString[e_DefString.e_DefString_Deflect];
 
     const animSize = this.animations.length;
 
     for (let i = 0; i < animSize; i++) {
-      const animation = this.animations[i];
-      const animType = animation.GetAnimType();
+      const anim = this.GetSelectionData(i);
 
       let selectAnim = true;
 
@@ -865,7 +1005,7 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.byFunctionType === true) {
-          if (this._CheckFunctionType(animType, query.functionType) === false) selectAnim = false;
+          if (queryTypeDefString === -1 || anim.typeDefString !== queryTypeDefString) selectAnim = false;
         }
       }
 
@@ -873,7 +1013,7 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.byIncomingVelocity === true) {
-          const animIncomingVelocity = FloatToEnumVelocity(animation.GetIncomingVelocity());
+          const animIncomingVelocity = anim.incomingVelocity;
 
           if (query.incomingVelocity_Strict === false) {
             selectAnim = true;
@@ -892,17 +1032,9 @@ export class AnimCollection {
 
             if (query.incomingVelocity_ForceLinearity) {
               // disallow going from current -> slower/faster -> current; the complete section needs to be linear
-              let animIncomingVelocityFloat = RangeVelocity(animation.GetIncomingVelocity());
-              let animOutgoingVelocityFloat = RangeVelocity(animation.GetOutgoingVelocity());
-              let queryVelocityFloat = EnumToFloatVelocity(query.incomingVelocity);
-
-              // treat dribble and walk the same
-              if (FloatToEnumVelocity(animIncomingVelocityFloat) === e_Velocity.e_Velocity_Dribble) animIncomingVelocityFloat = walkVelocity;
-              if (FloatToEnumVelocity(animOutgoingVelocityFloat) === e_Velocity.e_Velocity_Dribble) animOutgoingVelocityFloat = walkVelocity;
-              if (FloatToEnumVelocity(queryVelocityFloat) === e_Velocity.e_Velocity_Dribble) queryVelocityFloat = walkVelocity;
-
-              if (animIncomingVelocityFloat > Math.max(queryVelocityFloat, animOutgoingVelocityFloat)) selectAnim = false;
-              if (animIncomingVelocityFloat < Math.min(queryVelocityFloat, animOutgoingVelocityFloat)) selectAnim = false;
+              // (dribble and walk are treated the same)
+              if (anim.incomingVelocityLinear > Math.max(queryVelocityLinear, anim.outgoingVelocityLinear)) selectAnim = false;
+              if (anim.incomingVelocityLinear < Math.min(queryVelocityLinear, anim.outgoingVelocityLinear)) selectAnim = false;
             }
           } else {
             // strict
@@ -915,7 +1047,7 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.byOutgoingVelocity === true) {
-          if (FloatToEnumVelocity(animation.GetOutgoingVelocity()) !== query.outgoingVelocity) selectAnim = false;
+          if (anim.outgoingVelocity !== query.outgoingVelocity) selectAnim = false;
         }
       }
 
@@ -923,24 +1055,19 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.bySide === true) {
-          const animIncomingDirection = animation.GetIncomingBodyDirection();
-
           // find out in what direction the anim rotates
-          const animOutgoingDirection = animation.GetOutgoingDirection().GetRotated2D(animation.GetOutgoingBodyAngle());
-          const animTurnAngle = animOutgoingDirection.GetAngle2D(animIncomingDirection);
-
-          // anim should not pass through opposite (180 deg) of desired look angle (fencedDirection)
+          const animIncomingDirection = anim.incomingBodyDirection;
+          const animOutgoingDirection = anim.outgoingDirectionBodyRotated;
+          const animTurnAngle = anim.turnAngle;
 
           if (Math.abs(animTurnAngle) > 0.06 * pi) {
             // threshold
             const animSide = animTurnAngle > 0 ? e_Side.e_Side_Left : e_Side.e_Side_Right;
 
             const animIncomingToFenceAngle = fencedDirection.GetAngle2D(animIncomingDirection);
-            const queryIncomingToFenceAngle = fencedDirection.GetAngle2D(query.incomingBodyDirection);
             const fenceToOutgoingAngle = animOutgoingDirection.GetAngle2D(fencedDirection);
 
             const animIncomingToFenceSide = animIncomingToFenceAngle > 0 ? e_Side.e_Side_Left : e_Side.e_Side_Right;
-            const queryIncomingToFenceSide = queryIncomingToFenceAngle > 0 ? e_Side.e_Side_Left : e_Side.e_Side_Right;
             const fenceToAnimOutgoingSide = fenceToOutgoingAngle > 0 ? e_Side.e_Side_Left : e_Side.e_Side_Right;
 
             // passes through fence! n000!
@@ -955,8 +1082,7 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.byPickupBall === true) {
-          const outgoingRetainState = animation.GetVariable('outgoing_retain_state');
-          if ((outgoingRetainState === '' && query.pickupBall === true) || (outgoingRetainState !== '' && query.pickupBall === false)) {
+          if ((anim.outgoingRetainStateEmpty && query.pickupBall === true) || (!anim.outgoingRetainStateEmpty && query.pickupBall === false)) {
             selectAnim = false;
           }
         }
@@ -966,7 +1092,7 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.allowLastDitchAnims === false) {
-          if (animation.GetVariable('lastditch') === 'true') {
+          if (anim.lastDitch) {
             selectAnim = false;
           }
         }
@@ -976,23 +1102,24 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (checkIncomingBodyDirection) {
-          if (FloatToEnumVelocity(animation.GetIncomingVelocity()) !== e_Velocity.e_Velocity_Idle) {
-            const incomingBodyDir = animation.GetIncomingBodyDirection();
+          if (anim.incomingVelocity !== e_Velocity.e_Velocity_Idle) {
+            const incomingBodyDir = anim.incomingBodyDirection;
 
             if (selectAnim) {
               // disallow larger incoming than current
-              if (Math.abs(FixAngle(incomingBodyDir.GetAngle2D())) > queryIncomingBodyAngleFixedAbs + marginRadians) selectAnim = false;
+              if (anim.incomingBodyAngleFixedAbs > queryIncomingBodyAngleFixedAbs + marginRadians) selectAnim = false;
             }
 
             if (selectAnim) {
               // absolute outgoing body dir is body dir + outgoing dir
-              const outgoingBodyDir = downVector.GetRotated2D(animation.GetOutgoingBodyAngle() + animation.GetOutgoingAngle());
+              const outgoingBodyDir = anim.outgoingBodyDir;
 
               // this version is not just moar beautiful, but also allows for -135 to 135 deg and vice versa
+              const incomingToQueryAngle = incomingBodyDir.GetAngle2D(query.incomingBodyDirection);
               if (query.incomingBodyDirection_Strict === true) {
-                if (Math.abs(incomingBodyDir.GetAngle2D(query.incomingBodyDirection)) > marginRadians) selectAnim = false;
+                if (Math.abs(incomingToQueryAngle) > marginRadians) selectAnim = false;
               } else {
-                if (Math.abs(incomingBodyDir.GetAngle2D(query.incomingBodyDirection)) > 0.5 * pi + marginRadians) selectAnim = false;
+                if (Math.abs(incomingToQueryAngle) > 0.5 * pi + marginRadians) selectAnim = false;
               }
 
               if (query.incomingBodyDirection_ForceLinearity) {
@@ -1002,7 +1129,7 @@ export class AnimCollection {
                 // 2. the (absolute) angles added up have to be < pi radians. else, we could be on the 'other side' of the 'virtual half circle' and still have the former condition met
 
                 const shortestAngle1 = incomingBodyDir.GetAngle2D(outgoingBodyDir);
-                const shortestAngle2 = incomingBodyDir.GetAngle2D(query.incomingBodyDirection);
+                const shortestAngle2 = incomingToQueryAngle;
                 if ((shortestAngle1 > marginRadians && shortestAngle2 > marginRadians) || (shortestAngle1 < -marginRadians && shortestAngle2 < -marginRadians)) {
                   selectAnim = false;
                 }
@@ -1025,22 +1152,12 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.byIncomingBallDirection === true) {
-          let animBallDirection = GetParsedVector(this.GetSelectionCache(i).incomingBallDirection, animation.GetVariable('incomingballdirection'));
-          const animBallDirectionLength = animBallDirection.GetLength();
-          if (animBallDirectionLength < 0.1) {
-            Log(e_FatalError, 'AnimCollection', 'Crudeselection', 'Anim ' + animation.GetName() + ' missing incoming ball direction');
+          if (anim.incomingBallDirectionLength < 0.1) {
+            Log(e_FatalError, 'AnimCollection', 'Crudeselection', 'Anim ' + this.animations[i].GetName() + ' missing incoming ball direction');
           }
-          if (animBallDirectionLength !== 0.0 && queryIncomingBallDirectionLength !== 0.0) {
-            // decimate height diff
-            animBallDirection = animBallDirection.WithCoord(2, animBallDirection.coords[2] * 0.4).GetNormalized();
-
-            const ballDirectionAngle = Math.abs(adaptedIncomingBallDirection.GetAngle2D(animBallDirection));
-            let maxDeviation = Math.abs(atof(animation.GetVariable('incomingballdirection_maxdeviation')) * pi);
-            if (maxDeviation === 0.0) {
-              maxDeviation = this.maxIncomingBallDirectionDeviation;
-              if (animType === deflectString) maxDeviation = 0.4 * pi;
-            }
-            if (ballDirectionAngle > maxDeviation) selectAnim = false;
+          if (anim.incomingBallDirectionLength !== 0.0 && queryIncomingBallDirectionLength !== 0.0) {
+            const ballDirectionAngle = Math.abs(adaptedIncomingBallDirection.GetAngle2D(anim.incomingBallDirectionAdapted));
+            if (ballDirectionAngle > anim.incomingBallDirectionMaxDeviation) selectAnim = false;
           }
         }
       }
@@ -1049,34 +1166,28 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.byOutgoingBallDirection === true) {
-          let animBallDirection = GetParsedVector(this.GetSelectionCache(i).ballDirection, animation.GetVariable('balldirection'));
-          animBallDirection = animBallDirection.GetNormalized(Vector3.ZERO);
+          const animBallDirection = anim.ballDirection;
           const queryDirection = queryOutgoingBallDirection2DIsNull ? animBallDirection : queryOutgoingBallDirection2DNormalized;
           const ballDirectionAngle = Math.abs(queryDirection.GetAngle2D(animBallDirection));
-          let maxDeviation = Math.abs(atof(animation.GetVariable('outgoingballdirection_maxdeviation')) * pi);
-          if (maxDeviation === 0.0) {
-            maxDeviation = this.maxOutgoingBallDirectionDeviation;
-          }
-          if (ballDirectionAngle > maxDeviation) selectAnim = false;
+          if (ballDirectionAngle > anim.outgoingBallDirectionMaxDeviation) selectAnim = false;
         }
       }
 
       // select by PROPERTIES
 
       if (selectAnim) {
-        if (queryIncomingSpecialState !== animation.GetVariable('incoming_special_state')) selectAnim = false;
+        if (queryIncomingSpecialState !== anim.incomingSpecialState) selectAnim = false;
         // hax: allow switching of hands (except for deflect anims) (in future, maybe make special case for 'both hands at the same time')
-        const animIncomingRetainState = animation.GetVariable('incoming_retain_state');
-        if ((queryIsDeflect || queryHasIncomingRetainState !== (animIncomingRetainState !== '')) && queryIncomingRetainState !== animIncomingRetainState) selectAnim = false;
-        if (querySpecialVar1 !== atof(animation.GetVariable('specialvar1'))) selectAnim = false;
-        if (querySpecialVar2 !== atof(animation.GetVariable('specialvar2'))) selectAnim = false;
+        if ((queryIsDeflect || queryHasIncomingRetainState !== (anim.incomingRetainState !== '')) && queryIncomingRetainState !== anim.incomingRetainState) selectAnim = false;
+        if (querySpecialVar1 !== anim.specialVar1) selectAnim = false;
+        if (querySpecialVar2 !== anim.specialVar2) selectAnim = false;
       }
 
       // select by TRIP TYPE
 
       if (selectAnim) {
         if (query.byTripType === true) {
-          if (Math.trunc(cround(atof(animation.GetVariable('triptype')))) !== query.tripType) selectAnim = false;
+          if (anim.tripType !== query.tripType) selectAnim = false;
         }
       }
 
@@ -1085,23 +1196,10 @@ export class AnimCollection {
 
       if (selectAnim) {
         if (query.heedForcedFoot === true) {
-          const forcedFoot = animation.GetVariable('forcedfoot');
-          let which = 0;
-          if (forcedFoot === 'strong') which = 1;
-          else if (forcedFoot === 'weak') which = 2;
+          const which = anim.forcedFootWhich;
           if (which !== 0) {
-            const touchFoot = animation.GetVariable('touchfoot');
-            let animFoot = e_Foot.e_Foot_Right;
-            if (touchFoot === 'left') animFoot = e_Foot.e_Foot_Left;
-
-            // for mirrored anims that, therefore, don't start with right foot
-            if (animation.GetCurrentFoot() === e_Foot.e_Foot_Left) {
-              if (animFoot === e_Foot.e_Foot_Left) animFoot = e_Foot.e_Foot_Right;
-              else animFoot = e_Foot.e_Foot_Left;
-            }
-
-            if (which === 1 && query.strongFoot !== animFoot) selectAnim = false;
-            if (which === 2 && query.strongFoot === animFoot) selectAnim = false;
+            if (which === 1 && query.strongFoot !== anim.forcedFootAnimFoot) selectAnim = false;
+            if (which === 2 && query.strongFoot === anim.forcedFootAnimFoot) selectAnim = false;
           }
         }
       }
@@ -1135,13 +1233,17 @@ export class AnimCollection {
     return quadrantID;
   }
 
-  protected GetSelectionCache(index: number): AnimSelectionCache {
-    let cache = this.selectionCache[index];
-    if (cache === undefined) {
-      cache = new AnimSelectionCache();
-      this.selectionCache[index] = cache;
+  protected GetSelectionData(index: number): AnimSelectionData {
+    const animation = this.animations[index];
+    let data = this.selectionData[index];
+    if (data === undefined) {
+      data = new AnimSelectionData();
+      this.selectionData[index] = data;
     }
-    return cache;
+    if (data.animation !== animation || data.changeCount !== animation.GetChangeCount()) {
+      data.Update(animation, this.defString, this.maxIncomingBallDirectionDeviation, this.maxOutgoingBallDirectionDeviation);
+    }
+    return data;
   }
 
   protected _PrepareAnim(animation: Animation, playerNode: Node, bodyParts: Geometry[], nodeMap: NodeMap, _convertAngledDribbleToWalk = false): void {

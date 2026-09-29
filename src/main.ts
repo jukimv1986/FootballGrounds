@@ -8,6 +8,7 @@ import { SetConfiguration, SetDB, SetMenuTask } from './game/globals';
 import { MenuTask } from './game/menu/menutask';
 import { GetRenderer, bootRuntime } from './app/boot';
 import { StartMatchSession } from './app/matchsession';
+import { GetActiveMatch } from './app/matchsessionrunner';
 import { LoadConfiguration } from './ui/config';
 import { dataUrl } from './ui/dom';
 import { installGlobalErrorHandler, showErrorPanel } from './ui/errorpanel';
@@ -74,7 +75,7 @@ async function boot(): Promise<void> {
 /** `?automation` exposes a small API for end-to-end tests (Playwright) */
 function exposeAutomationApi(): void {
   if (!new URLSearchParams(location.search).has('automation')) return;
-  (window as unknown as Record<string, unknown>).__footballcareer = { StartMatchSession, GetRenderer };
+  (window as unknown as Record<string, unknown>).__footballcareer = { StartMatchSession, GetRenderer, GetActiveMatch };
 }
 
 installGlobalErrorHandler();

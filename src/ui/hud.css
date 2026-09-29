@@ -497,3 +497,40 @@
 @media (prefers-reduced-motion: reduce) {
   .mo-toast, .mo-progress-bar, .touch-button, .touch-stick-base { transition: none; animation: none; }
 }
+
+/* goal replay badge (src/app/replaydirector.ts) */
+.replay-badge {
+  position: absolute;
+  top: 7%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(8, 14, 11, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-family: var(--font-display, sans-serif);
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 50;
+}
+.replay-badge small {
+  font-family: var(--font-body, sans-serif);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.7;
+}
+.replay-badge__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  animation: replay-blink 1s steps(2, start) infinite;
+}
+@keyframes replay-blink { to { visibility: hidden; } }

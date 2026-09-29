@@ -27,6 +27,7 @@ import { setMenuLayerVisible } from '../ui/router';
 import { MatchOverlay, type CameraSettings, type FullTimeScorer } from './matchoverlay';
 import { SetMatchSessionRunner, type MatchResult, type MatchSessionOptions, type MatchSessionRunner } from './matchsession';
 import { MatchStatsCollector, type StatsMatchView } from './matchstats';
+import { ReplayDirector } from './replaydirector';
 
 /** what the runner needs from the renderer (ThreeRenderer implements it) */
 export interface MatchRenderer {
@@ -166,6 +167,7 @@ class MatchSession {
   protected gameTask: GameTask | null = null;
   protected loop: GameLoop | null = null;
   protected stats: MatchStatsCollector | null = null;
+  protected replay: ReplayDirector | null = null;
   protected matchData: MatchData | null = null;
   protected fullTimeAt_ms: number | null = null;
   protected ending = false;
@@ -187,6 +189,10 @@ class MatchSession {
       this.reject = reject;
       this.Start().catch((error) => this.Fail(error));
     });
+  }
+
+  CurrentMatch(): Match | null {
+    return this.Match();
   }
 
   protected Match(): RunnerMatch | null {
@@ -251,6 +257,8 @@ class MatchSession {
       },
     });
 
+    this.replay = new ReplayDirector(match);
+
     if (this.audio) await this.audio.PrepareScene(GetScene3D());
     this.Progress(1);
 
@@ -309,6 +317,7 @@ class MatchSession {
 
   protected OnStep(): void {
     this.stats?.Step();
+    this.replay?.Step();
     const match = this.Match();
     if (!match || this.ending) return;
     if (this.fullTimeAt_ms === null) {
@@ -331,6 +340,8 @@ class MatchSession {
   }
 
   protected OnPause(paused: boolean): void {
+    // opening the pause menu ends a running goal replay first
+    if (paused) this.replay?.Stop();
     const match = this.Match();
     if (match && !this.ending) match.Pause(paused);
     SetKeyboardCapture(!paused);
@@ -429,6 +440,8 @@ class MatchSession {
     this.unsubscribeControllers = null;
 
     try {
+      this.replay?.Exit();
+      this.replay = null;
       this.gameTask?.Exit();
     } finally {
       this.gameTask = null;
@@ -459,14 +472,23 @@ class MatchSession {
   }
 }
 
+let activeSession: MatchSession | null = null;
+
+/** the match of the running session, if any (automation / debugging) */
+export function GetActiveMatch(): Match | null {
+  return activeSession?.CurrentMatch() ?? null;
+}
+
 /** runs one match session (the MatchSessionRunner) */
 export function CreateMatchSessionRunner(runtime: MatchRuntime): MatchSessionRunner {
   return async (options: MatchSessionOptions): Promise<MatchResult> => {
     if (sessionRunning) throw new Error('a match session is already running');
     sessionRunning = true;
     try {
-      return await new MatchSession(runtime, options).Run();
+      activeSession = new MatchSession(runtime, options);
+      return await activeSession.Run();
     } finally {
+      activeSession = null;
       sessionRunning = false;
     }
   };

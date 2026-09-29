@@ -13,8 +13,9 @@ import { finishPendingMatch, pendingMatchContext, simulatePendingMatch } from '.
 import { comp } from '../core/index';
 import { teamName } from '../core/competitions';
 import type { CareerState, KitPattern, MatchReport } from '../core/types';
-import { kitNumbers, registerMatch, resultToOutcome, sideIdentity, unregisterCareer, type Registration } from './bridge';
+import { ABANDON_RESIMULATE_MINUTE, kitNumbers, registerMatch, resultMinute, resultToOutcome, sideIdentity, unregisterCareer, type ConversionInfo, type Registration } from './bridge';
 import { prepareKits } from './kits';
+import { crestSvgUrl } from '../ui/components';
 
 export interface PlayResult {
   report: MatchReport | null;
@@ -68,7 +69,11 @@ export async function playPendingMatch3D(state: CareerState, hooks: PlayHooks = 
   try {
     const clubPattern = (id: number): KitPattern => state.world.clubs[id]?.kitPattern ?? 'plain';
     const clubSponsor = (id: number): string => state.world.clubs[id]?.sponsor ?? '';
-    await prepareKits(reg, [f.national ? 'plain' : clubPattern(f.home), f.national ? 'plain' : clubPattern(f.away)], [f.national ? '' : clubSponsor(f.home), f.national ? '' : clubSponsor(f.away)], [sideIdentity(state, f.home, !!f.youth).short, sideIdentity(state, f.away, !!f.youth).short]);
+    const crestOf = (id: number) => {
+      const ident = sideIdentity(state, id, !!f.youth);
+      return crestSvgUrl(ident.colors, f.national ? 'halves' : clubPattern(id), ident.short);
+    };
+    await prepareKits(reg, [f.national ? 'plain' : clubPattern(f.home), f.national ? 'plain' : clubPattern(f.away)], [f.national ? '' : clubSponsor(f.home), f.national ? '' : clubSponsor(f.away)], [sideIdentity(state, f.home, !!f.youth).short, sideIdentity(state, f.away, !!f.youth).short], [crestOf(f.home), crestOf(f.away)]);
     hooks.onRegistered?.(reg);
     const [homeKit, awayKit] = kitNumbers(reg);
     const c = comp(state, f.compId);
@@ -89,7 +94,23 @@ export async function playPendingMatch3D(state: CareerState, hooks: PlayHooks = 
     unregisterCareer(db);
   }
   if (!result) return { report: simulatePendingMatch(state), simulated: true, note };
-  if (result.abandoned) return { report: simulatePendingMatch(state), simulated: true, note: 'You left the match early — the result was simulated.' };
-  const out = resultToOutcome(state, ctx, reg, result);
-  return { report: finishPendingMatch(state, out, true), simulated: false };
+  return applyEngineResult(state, reg, result);
+}
+
+/**
+ * Applies a finished (or abandoned) engine match to the pending career match. A match quit in
+ * the first minutes with no goals is simply simulated instead; later, what happened stands and
+ * only the remaining minutes are simulated (he counts as substituted when he left).
+ */
+export function applyEngineResult(state: CareerState, reg: Registration, result: MatchResult): PlayResult {
+  const ctx = pendingMatchContext(state);
+  if (!ctx) return { report: null, simulated: false };
+  if (result.abandoned && resultMinute(result) < ABANDON_RESIMULATE_MINUTE && result.homeGoals + result.awayGoals === 0) {
+    return { report: simulatePendingMatch(state), simulated: true, note: 'You left the match straight after kick-off — it was simulated instead.' };
+  }
+  const info: ConversionInfo = {};
+  const out = resultToOutcome(state, ctx, reg, result, info);
+  const report = finishPendingMatch(state, out, true);
+  const note = info.continuedFrom !== undefined ? `You left the match at ${info.continuedFrom}' — the rest of it was simulated.` : undefined;
+  return { report, simulated: false, note };
 }

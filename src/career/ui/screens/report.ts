@@ -41,7 +41,7 @@ export function createReportScreen(app: CareerApp, r: MatchReport, note?: string
         'div',
         { class: 'cc-scoreboard' },
         h('div', { class: 'cc-sb-team' }, crest(s, r.home, 'lg'), h('strong', {}, r.homeName)),
-        h('div', { class: 'cc-sb-score' }, h('span', {}, String(r.hg)), h('span', { class: 'cc-sb-sep' }, '–'), h('span', {}, String(r.ag)), r.pens ? h('small', {}, `pens ${r.pens[0]}–${r.pens[1]}`) : null),
+        h('div', { class: 'cc-sb-score' }, h('span', {}, String(r.hg)), h('span', { class: 'cc-sb-sep' }, '–'), h('span', {}, String(r.ag)), r.pens ? h('small', {}, `${r.aet ? 'a.e.t. · ' : ''}pens ${r.pens[0]}–${r.pens[1]}`) : r.aet ? h('small', {}, 'after extra time') : null),
         h('div', { class: 'cc-sb-team' }, crest(s, r.away, 'lg'), h('strong', {}, r.awayName)),
       ),
       h(
@@ -64,10 +64,11 @@ export function createReportScreen(app: CareerApp, r: MatchReport, note?: string
                   stat('Assists', u.assists),
                   stat('Shots (on target)', `${u.shots} (${u.shotsOnTarget})`),
                   stat('Passes', `${u.passesCompleted}/${u.passes}`),
-                  stat('Key passes', u.keyPasses),
-                  stat('Dribbles', u.dribbles),
+                  // the 3D engine does not track key passes, dribbles or interceptions
+                  r.played3D ? stat('Touches', u.touches ?? '—') : stat('Key passes', u.keyPasses),
+                  r.played3D ? null : stat('Dribbles', u.dribbles),
                   stat('Tackles', u.tackles),
-                  stat('Interceptions', u.interceptions),
+                  r.played3D ? null : stat('Interceptions', u.interceptions),
                   u.saves ? stat('Saves', u.saves) : null,
                   stat('Fouls', u.fouls),
                 ),

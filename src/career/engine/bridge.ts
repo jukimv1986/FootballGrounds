@@ -20,11 +20,11 @@ import { ageAt } from '../core/dates';
 import { club, coachOf } from '../core/index';
 import { isNationalId, needsWinner } from '../core/competitions';
 import { COUNTRIES, NATIONS } from '../core/data/geography';
-import type { MatchOutcome, NpcMatchLine } from '../core/matchsim';
+import { settleKnockoutDraw, simulateRemainder, type MatchOutcome, type NpcMatchLine, type SimSideInput } from '../core/matchsim';
 import { npcStats, shortName } from '../core/players';
 import { USER_ID, FORMATIONS, lineupPlayer, type Lineup } from '../core/selection';
 import { Rng, clamp } from '../core/rng';
-import type { UserMatchContext } from '../core/results';
+import { sideName, type UserMatchContext } from '../core/results';
 import type { CareerState, CoachStyle, FormationKey, Id, ReportEvent, RGB, UserMatchStats } from '../core/types';
 
 export const CAREER_TEAM_IDS: [number, number] = [9001, 9002];
@@ -37,6 +37,8 @@ export interface RegisteredPlayer {
   side: 0 | 1;
   pos: Position;
   name: string;
+  /** in the starting XI (formation order 0..10) */
+  starter: boolean;
 }
 
 export interface Registration {
@@ -134,7 +136,7 @@ export function registerMatch(state: CareerState, ctx: UserMatchContext, db: Dat
       const rec = playerRecord(state, lineup, e.npcId, e.pos, CAREER_TEAM_IDS[side], order, nextId);
       if (!rec) return;
       db.UpsertPlayer(rec);
-      reg.players.push({ engineId: nextId, careerId: e.npcId, side, pos: e.pos, name: `${rec.firstname.charAt(0)}. ${rec.lastname}` });
+      reg.players.push({ engineId: nextId, careerId: e.npcId, side, pos: e.pos, name: `${rec.firstname.charAt(0)}. ${rec.lastname}`, starter: order < lineup.starters.length });
       if (e.npcId === USER_ID) reg.userEngineId = nextId;
       nextId++;
     });
@@ -205,30 +207,100 @@ function statsLine(s: PlayerMatchStats | undefined): { rating: number; mins: num
   return { rating: s ? clamp(s.rating, 3, 10) : 6, mins: s ? s.minutesPlayed : 0 };
 }
 
-export function resultToOutcome(state: CareerState, ctx: UserMatchContext, reg: Registration, result: MatchResult): MatchOutcome {
+/** matches quit this early are replayed as a whole simulation instead of being continued */
+export const ABANDON_RESIMULATE_MINUTE = 10;
+
+/** the match minute an (abandoned) engine result reached */
+export function resultMinute(result: MatchResult): number {
+  if (!result.abandoned) return 90;
+  let m = 0;
+  for (const s of result.playerStats) m = Math.max(m, s.minutesPlayed);
+  for (const e of result.events) if (e.type !== 'fulltime') m = Math.max(m, Math.min(90, e.minute));
+  return Math.min(90, m);
+}
+
+export interface ConversionInfo {
+  /** the rest of an abandoned match was simulated from this minute */
+  continuedFrom?: number;
+}
+
+/**
+ * Converts the engine's MatchResult into a MatchOutcome for the career:
+ *  - scorers/cards/stats of everyone registered, the user's line from his locked player;
+ *  - an abandoned match keeps what happened so far and the remaining minutes are simulated
+ *    (he counts as substituted when he left);
+ *  - knockout draws get simulated extra time and, if still level, penalties (the engine always
+ *    stops after 90 minutes).
+ */
+export function resultToOutcome(state: CareerState, ctx: UserMatchContext, reg: Registration, result: MatchResult, info: ConversionInfo = {}): MatchOutcome {
+  const rng = new Rng(ctx.fixture.id * 131 + state.day * 7 + 1);
   const byEngine = new Map(reg.players.map((p) => [p.engineId, p]));
   const statsById = new Map(result.playerStats.map((s) => [s.playerDatabaseID, s]));
-  const events: ReportEvent[] = [];
-  const nameOf = (engineId?: number) => (engineId !== undefined ? byEngine.get(engineId)?.name ?? 'Unknown' : 'Unknown');
+  const userName = `${state.user.first} ${state.user.last}`;
+  const events: (ReportEvent & { npcId?: number; assistId?: number })[] = [];
+  const nameOf = (engineId?: number) => (engineId === undefined ? 'Unknown' : engineId === reg.userEngineId ? userName : byEngine.get(engineId)?.name ?? 'Unknown');
   for (const e of result.events as MatchEvent[]) {
     const side = e.teamID;
     const isUser = e.playerDatabaseID !== undefined && e.playerDatabaseID === reg.userEngineId;
-    if (e.type === 'goal') events.push({ minute: e.minute, type: 'goal', side, name: isUser ? `${state.user.first} ${state.user.last}` : nameOf(e.playerDatabaseID), assist: e.assistDatabaseID !== undefined ? (e.assistDatabaseID === reg.userEngineId ? `${state.user.first} ${state.user.last}` : nameOf(e.assistDatabaseID)) : undefined, user: isUser });
-    else if (e.type === 'owngoal') events.push({ minute: e.minute, type: 'owngoal', side, name: nameOf(e.playerDatabaseID) });
-    else if (e.type === 'yellow' || e.type === 'red') events.push({ minute: e.minute, type: e.type, side, name: isUser ? `${state.user.first} ${state.user.last}` : nameOf(e.playerDatabaseID), user: isUser });
+    const minute = Math.max(1, e.minute);
+    if (e.type === 'goal') events.push({ minute, type: 'goal', side, name: e.playerDatabaseID === undefined ? 'Goal' : nameOf(e.playerDatabaseID), assist: e.assistDatabaseID !== undefined ? nameOf(e.assistDatabaseID) : undefined, user: isUser || (e.assistDatabaseID !== undefined && e.assistDatabaseID === reg.userEngineId) });
+    else if (e.type === 'owngoal') events.push({ minute, type: 'owngoal', side, name: 'Own goal', text: e.playerDatabaseID !== undefined ? nameOf(e.playerDatabaseID) : undefined, user: isUser });
+    else if (e.type === 'yellow' || e.type === 'red') events.push({ minute, type: e.type, side: byEngine.get(e.playerDatabaseID ?? -1)?.side ?? side, name: nameOf(e.playerDatabaseID), user: isUser });
   }
+
+  const minute = resultMinute(result);
+  const continued = result.abandoned;
+  if (continued) info.continuedFrom = minute;
+  let hg = result.homeGoals;
+  let ag = result.awayGoals;
+
   const lines: NpcMatchLine[] = [];
+  const lineOf = new Map<number, NpcMatchLine>();
   for (const p of reg.players) {
     if (p.careerId === USER_ID || p.careerId < 0) continue;
     const s = statsById.get(p.engineId);
-    const { rating, mins } = statsLine(s);
+    let { rating, mins } = statsLine(s);
+    // an abandoned match: the players on the pitch play on in the simulated remainder
+    if (continued && p.starter && !(s && s.redCards > 0)) mins = 90;
     if (mins <= 0) continue;
-    lines.push({ id: p.careerId, side: p.side, mins, started: true, goals: s?.goals ?? 0, assists: s?.assists ?? 0, yellow: s?.yellowCards ?? 0, red: s?.redCards ?? 0, rating, injuryDays: 0 });
+    const l: NpcMatchLine = { id: p.careerId, side: p.side, mins, started: p.starter, goals: s?.goals ?? 0, assists: s?.assists ?? 0, yellow: s?.yellowCards ?? 0, red: s?.redCards ?? 0, rating, injuryDays: 0 };
+    lines.push(l);
+    lineOf.set(p.careerId, l);
   }
+  const sides: [SimSideInput, SimSideInput] = [
+    { lineup: ctx.lineups[0], name: sideName(state, ctx.lineups[0]) },
+    { lineup: ctx.lineups[1], name: sideName(state, ctx.lineups[1]) },
+  ];
+  const credit = (evs: (ReportEvent & { npcId?: number; assistId?: number })[]) => {
+    for (const ev of evs) {
+      if (ev.npcId !== undefined) {
+        const l = lineOf.get(ev.npcId);
+        if (l) {
+          l.goals++;
+          l.rating = clamp(l.rating + 0.8, 3, 10);
+        }
+      }
+      if (ev.assistId !== undefined) {
+        const l = lineOf.get(ev.assistId);
+        if (l) l.assists++;
+      }
+      events.push(ev);
+    }
+  };
+  if (continued) {
+    const rest = simulateRemainder(rng, sides[0], sides[1], minute, !!ctx.fixture.national);
+    hg += rest.goals[0];
+    ag += rest.goals[1];
+    credit(rest.events);
+  }
+
   let user: UserMatchStats | null = null;
   if (reg.userEngineId !== null) {
     const s = statsById.get(reg.userEngineId);
     if (s && s.minutesPlayed > 0) {
+      const opp = result.playerStats.filter((x) => x.teamID !== ctx.side);
+      const conceded = ctx.side === 0 ? result.awayGoals : result.homeGoals;
+      const isGk = (reg.players.find((p) => p.engineId === reg.userEngineId)?.pos ?? state.user.pos) === 'GK';
       user = {
         minutes: s.minutesPlayed,
         goals: s.goals,
@@ -241,15 +313,28 @@ export function resultToOutcome(state: CareerState, ctx: UserMatchContext, reg: 
         dribbles: 0,
         tackles: s.tackles,
         interceptions: 0,
-        saves: 0,
+        saves: isGk ? Math.max(0, opp.reduce((a, x) => a + x.shotsOnTarget, 0) - conceded) : 0,
+        touches: s.touches,
         fouls: s.fouls,
         yellow: s.yellowCards,
         red: s.redCards,
         rating: clamp(Math.round(s.rating * 10) / 10, 3, 10),
         motm: false,
       };
+      if (continued && s.redCards === 0) events.push({ minute: Math.max(1, minute), type: 'sub_off', side: ctx.side, name: userName, user: true, text: 'left the match' });
     }
   }
+
+  // knockout draws: the engine plays 90 minutes, so extra time and penalties are simulated
+  const ko = needsWinner(state, ctx.fixture);
+  const settle = settleKnockoutDraw(rng, sides[0], sides[1], ko, hg, ag, !!ctx.fixture.national);
+  if (settle.aet) {
+    hg += settle.extra[0];
+    ag += settle.extra[1];
+    credit(settle.events);
+    if (user && user.red === 0 && !continued) user.minutes += 30;
+  }
+
   let motmId = -2;
   let best = -1;
   for (const l of lines) if (l.rating > best) {
@@ -260,31 +345,13 @@ export function resultToOutcome(state: CareerState, ctx: UserMatchContext, reg: 
     user.motm = true;
     motmId = USER_ID;
   }
-  // knockout draws: the engine plays 90 minutes, so settle it from the spot
-  let pens: [number, number] | undefined;
-  const ko = needsWinner(state, ctx.fixture);
-  const aggH = result.homeGoals + (ko.aggregate?.[0] ?? 0);
-  const aggA = result.awayGoals + (ko.aggregate?.[1] ?? 0);
-  if (ko.needed && aggH === aggA) {
-    const rng = new Rng(ctx.fixture.id * 131 + state.day);
-    let h = 0;
-    let a = 0;
-    for (let i = 0; i < 5; i++) {
-      if (rng.chance(0.76)) h++;
-      if (rng.chance(0.76)) a++;
-    }
-    while (h === a) {
-      if (rng.chance(0.72)) h++;
-      if (rng.chance(0.72)) a++;
-    }
-    pens = [h, a];
-  }
   const shots: [number, number] = [0, 0];
   for (const s of result.playerStats) shots[s.teamID] += s.shots;
   const passes = [0, 0];
   for (const s of result.playerStats) passes[s.teamID] += s.passes;
-  const possession = passes[0] + passes[1] > 0 ? passes[0] / (passes[0] + passes[1]) : 0.5;
-  return { hg: result.homeGoals, ag: result.awayGoals, pens, events: events.sort((x, y) => x.minute - y.minute), lines, user, possession, shots, motmId, userInjuryDays: 0 };
+  const possession = passes[0] + passes[1] > 0 ? clamp(passes[0] / (passes[0] + passes[1]), 0.2, 0.8) : 0.5;
+  events.sort((x, y) => x.minute - y.minute);
+  return { hg, ag, pens: settle.pens, aet: settle.aet || undefined, events, lines, user, possession, shots: [Math.max(shots[0], hg), Math.max(shots[1], ag)], motmId, userInjuryDays: 0 };
 }
 
 export { shortName };

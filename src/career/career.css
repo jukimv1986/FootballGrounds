@@ -437,6 +437,10 @@
 .cc-md-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
 .cc-md-actions .btn { min-height: 56px; padding: 0 28px; font-size: 18px; }
 .cc-md-note { text-align: center; margin: 0; }
+.cc-md-length { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-md-length .cc-kicker { margin-right: 4px; }
+.cc-md-length .cc-choice-chip { display: inline-flex; align-items: baseline; gap: 6px; }
+.cc-md-length .cc-choice-chip small { font-family: var(--font-body, inherit); font-weight: 600; letter-spacing: 0; opacity: 0.75; font-size: 12px; }
 .cc-md-lineups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .cc-md-lineups h3 { margin: 0 0 6px; font-family: var(--font-display); font-weight: 800; letter-spacing: 0.04em; }
 .cc-lineup { padding: 10px; border-radius: var(--radius-lg); background: rgba(0, 0, 0, 0.25); border: 1px solid var(--line); }

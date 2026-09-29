@@ -5,7 +5,7 @@ import { h } from '../../../ui/dom';
 import { formatDate } from '../../core/dates';
 import { COURSES, DIETS, HOBBIES, INVESTMENTS, SLEEP, TRANSPORT } from '../../core/data/lifestyle';
 import { city } from '../../core/index';
-import { FOUNDATION_COST, buyHobby, buyTransport, donate, enrollCourse, housingDef, housingOptions, invest, moveHouse, netWeeklyWage, sellProperty, startFoundation, weeklyCosts, withdraw } from '../../core/life';
+import { FOUNDATION_COST, buyHobby, buyTransport, donate, enrollCourse, housingDef, housingOptions, invest, livesIn, moveHouse, propertyRent, netWeeklyWage, sellProperty, startFoundation, weeklyCosts, withdraw } from '../../core/life';
 import { userAge } from '../../core/footballer';
 import type { CareerApp } from '../app';
 import { btn, card, emptyState, keyValue, money, pill, table } from '../components';
@@ -74,7 +74,7 @@ export function renderFinances(app: CareerApp): HTMLElement {
           );
         }),
       ]),
-      card('Your property', life.properties.length ? [table(['Home', 'City', 'Value', ''], life.properties.map((p, i) => [housingDef(p.kind).name, city(s, p.cityId).name, cur(p.value), btn('Sell', () => (app.toast(`Sold for ${cur(sellProperty(s, i))}`, 'success'), app.render()), 'ghost', { small: true })]))] : [emptyState('You do not own property yet.')]),
+      card('Your property', life.properties.length ? [table(['Home', 'City', 'Value', 'Use', ''], life.properties.map((p, i) => [housingDef(p.kind).name, city(s, p.cityId).name, cur(p.value), livesIn(s, p) ? 'Your home' : `Let out · ${cur(propertyRent(p))}/month`, livesIn(s, p) ? '' : btn('Sell', () => (app.toast(`Sold for ${cur(sellProperty(s, i))}`, 'success'), app.render()), 'ghost', { small: true })])), h('p', { class: 'cc-dim cc-small' }, 'Homes you own but do not live in are let out. Property values follow the market.')] : [emptyState('You do not own property yet. Buying instead of renting builds wealth — and a let-out home pays rent.')]),
       card('Transport', [
         h('p', { class: 'cc-dim' }, 'Better transport makes the commute less tiring. Your old vehicle is traded in.'),
         table(

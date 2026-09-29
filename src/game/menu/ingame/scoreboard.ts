@@ -10,13 +10,10 @@ import type { Vector3 } from '../../../blunted/base/math/vector3';
 import type { Match } from '../../onthepitch/match';
 import { GetDB } from '../../globals';
 import { Gui2View, type Gui2WindowManager } from '../../ui/gui2';
+// data-root relative path -> url; also serves generated images (career-mode crests)
+import { dataUrl } from '../../../ui/dom';
 
 const hasDOM = typeof document !== 'undefined';
-
-/** data-root relative path -> url (see src/ui/dom.ts dataUrl) */
-function dataUrl(path: string): string {
-  return './data/' + path.split('/').map(encodeURIComponent).join('/');
-}
 
 function cssColor(c: Vector3 | undefined, fallback: string): string {
   if (!c) return fallback;

@@ -92,6 +92,11 @@ export function showEventDialog(app: CareerApp): void {
     if (ok !== true) b.setAttribute('aria-disabled', 'true');
     return b;
   });
+  // safety net: never trap the player in an event whose options all became unavailable
+  if (choices.every((b) => b.getAttribute('aria-disabled') === 'true')) {
+    choices.push(h('button', { class: 'cc-choice', type: 'button', 'data-nav-default': true, onclick: () => showOutcome(resolveEvent(s, 0, rngOf(s))) }, h('span', { class: 'cc-choice-label' }, 'Let it be'), h('span', { class: 'cc-choice-hint' }, 'None of the options is possible right now')));
+    choices[0].removeAttribute('data-nav-default');
+  }
   body.replaceChildren(
     h('div', { class: 'cc-event-story' }, h('div', { class: 'cc-event-portrait' }, avatar({ skin: s.user.skin, hair: s.user.hair, hairColor: s.user.hairColor, shirt: s.world.clubs[s.user.clubId]?.colors }, 72)), h('p', { class: 'cc-event-text' }, def.text(s, inst.ctx))),
     h('div', { class: 'cc-choices' }, ...choices),

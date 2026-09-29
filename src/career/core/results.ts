@@ -297,6 +297,14 @@ function addToLine(line: StatLine, us: UserMatchStats, started: boolean, cleanSh
   if (cleanSheet) line.cleanSheets++;
 }
 
+/** true when the user's side won the fixture (penalties included) */
+function won(ctx: UserMatchContext, out: MatchOutcome): boolean {
+  const gf = ctx.side === 0 ? out.hg : out.ag;
+  const ga = ctx.side === 0 ? out.ag : out.hg;
+  if (gf !== ga) return gf > ga;
+  return !!out.pens && (ctx.side === 0 ? out.pens[0] > out.pens[1] : out.pens[1] > out.pens[0]);
+}
+
 export function buildReport(state: CareerState, ctx: UserMatchContext, out: MatchOutcome, played3D: boolean): MatchReport {
   const f = ctx.fixture;
   const c = comp(state, f.compId);
@@ -316,8 +324,10 @@ export function buildReport(state: CareerState, ctx: UserMatchContext, out: Matc
   else if (gf > ga) headline = `Hard-fought win over ${oppName}`;
   else if (gf < ga - 2) headline = `Humbling defeat to ${oppName}`;
   else if (gf < ga) headline = `Defeat against ${oppName}`;
+  else if (out.pens) headline = won(ctx, out) ? `Shoot-out glory against ${oppName}` : `Heartbreak on penalties against ${oppName}`;
   else headline = `Honours even with ${oppName}`;
-  if (out.pens) headline += ` (penalties ${out.pens[0]}-${out.pens[1]})`;
+  if (out.pens) headline += ` (${won(ctx, out) ? 'won' : 'lost'} ${Math.max(...out.pens)}-${Math.min(...out.pens)} on penalties)`;
+  else if (out.aet) headline += ' (after extra time)';
   return {
     fixtureId: f.id,
     day: state.day,
@@ -329,6 +339,7 @@ export function buildReport(state: CareerState, ctx: UserMatchContext, out: Matc
     hg: out.hg,
     ag: out.ag,
     pens: out.pens,
+    aet: out.aet,
     userSide: ctx.side,
     events: out.events.filter((e) => e.type !== 'chance' || e.user),
     user: us && us.minutes > 0 ? us : null,

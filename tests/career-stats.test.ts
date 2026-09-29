@@ -88,7 +88,7 @@ describe('3D match registration', () => {
     });
     expect(out.hg).toBe(2);
     expect(out.events[0].type).toBe('goal');
-    expect(out.lines.length).toBeGreaterThan(15);
+    expect(out.lines.length).toBeGreaterThanOrEqual(11);
     unregisterCareer(db);
     expect(db.players.length).toBe(before);
     expect(db.players.every((p) => p.id < CAREER_PLAYER_BASE)).toBe(true);

@@ -5,6 +5,9 @@ import { h } from '../../../ui/dom';
 import { pushScreen, back, type Screen } from '../../../ui/router';
 import { withNav } from '../../../ui/nav';
 import { createLoadingScreen } from '../../../ui/screens/loading';
+import { formatMatchDuration } from '../../../ui/screens/matchoptions';
+import { GetConfigUnit } from '../../../ui/config';
+import { _default_MatchDuration } from '../../../game/gamedefines';
 import { pendingMatchContext, simulatePendingMatch } from '../../core/career';
 import { teamName } from '../../core/competitions';
 import { formatDateLong } from '../../core/dates';
@@ -19,6 +22,10 @@ import { crest, meter, pill, rgb } from '../components';
 import { cicon } from '../icons';
 import { createReportScreen } from './report';
 import type { MatchReport } from '../../core/types';
+
+/** match_duration values of the match day's quick / long options (see formatMatchDuration) */
+export const SHORT_MATCH = 0.1;
+export const LONG_MATCH = 0.75;
 
 function lineupList(app: CareerApp, l: Lineup): HTMLElement {
   const s = app.state;
@@ -75,8 +82,45 @@ export function createMatchDayScreen(app: CareerApp): Screen {
     });
     pushScreen(loading);
     const res = await playPendingMatch3D(s, { onLoadProgress: (x) => loading.setProgress(x) });
-    finish(res.report, res.simulated ? res.note : undefined);
+    finish(res.report, res.note);
     if (res.simulated && res.note) app.toast(res.note, 'warn');
+    app.save(false);
+  };
+
+  // match length for PLAY: the game setting, or a quick / long match just for career games
+  const lengthRow = () => {
+    const configured = GetConfigUnit('match_duration', _default_MatchDuration);
+    const options: { key: string; label: string; value: number | null }[] = [
+      { key: 'short', label: 'Short', value: SHORT_MATCH },
+      { key: 'normal', label: 'Normal', value: null },
+      { key: 'long', label: 'Long', value: LONG_MATCH },
+    ];
+    const current = s.settings.matchDuration;
+    const row = h(
+      'div',
+      { class: 'cc-md-length', role: 'group', 'aria-label': 'Match length' },
+      h('span', { class: 'cc-kicker' }, 'Match length'),
+      ...options.map((o) => {
+        const selected = o.value === null ? current === null : current === o.value;
+        const minutes = formatMatchDuration(o.value ?? configured);
+        return h(
+          'button',
+          {
+            class: `cc-choice-chip ${selected ? 'is-selected' : ''}`,
+            type: 'button',
+            'aria-pressed': selected ? 'true' : 'false',
+            title: o.value === null ? 'Your match duration setting' : undefined,
+            onclick: () => {
+              s.settings.matchDuration = o.value;
+              row.replaceWith(lengthRow());
+            },
+          },
+          h('strong', {}, o.label),
+          h('small', {}, minutes),
+        );
+      }),
+    );
+    return row;
   };
 
   el.append(
@@ -105,6 +149,7 @@ export function createMatchDayScreen(app: CareerApp): Screen {
         ),
         h('button', { class: 'btn cc-md-sim', type: 'button', onclick: simulate, 'data-nav-default': play.ok ? undefined : true }, cicon('sim'), h('span', {}, ctx.role === 'start' ? 'Simulate' : ctx.role === 'bench' ? 'Simulate (you may come on)' : 'Simulate')),
       ),
+      play.ok ? lengthRow() : null,
       h('p', { class: 'cc-md-note cc-dim' }, play.ok ? 'PLAY: you control only yourself, the camera follows you. Your real career attributes are used.' : play.reason ?? ''),
       h('div', { class: 'cc-md-lineups' }, h('div', {}, h('h3', {}, teamName(s, f.home, f.youth), h('span', { class: 'cc-dim' }, ` · ${hl.formation}`)), lineupList(app, hl)), h('div', {}, h('h3', {}, teamName(s, f.away, f.youth), h('span', { class: 'cc-dim' }, ` · ${al.formation}`)), lineupList(app, al))),
       pill(ctx.side === 0 ? 'Home' : 'Away', 'dim'),

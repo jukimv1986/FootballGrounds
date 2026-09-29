@@ -15,6 +15,8 @@ import { happinessIndex } from '../core/life';
 import { unreadCount } from '../core/messages';
 import { activityDef, trainingDef } from '../core/data/lifestyle';
 import { saveToSlot, type KV } from '../core/save';
+import { DEBUG_FORCE_START } from '../core/selection';
+import { autoPlay } from '../core/autoplay';
 import type { CareerState } from '../core/types';
 import { crest, meter, money, ovrBadge } from './components';
 import { cicon } from './icons';
@@ -49,6 +51,13 @@ const TABS: { key: TabKey; label: string; icon: string; render: (app: CareerApp)
   { key: 'career', label: 'Contract', icon: 'career', render: renderCareer },
 ];
 
+/** window.__career for browser tests: only with ?automation in the page URL */
+export function automationHook(): Record<string, unknown> | null {
+  const g = globalThis as unknown as { __career?: Record<string, unknown>; location?: Location };
+  if (!g.__career && g.location && new URLSearchParams(g.location.search).has('automation')) g.__career = {};
+  return g.__career ?? null;
+}
+
 export class CareerApp {
   tab: TabKey = 'hub';
   /** per-tab sub view (e.g. club -> 'table') */
@@ -76,9 +85,23 @@ export class CareerApp {
     this.bar = h('footer', { class: 'cc-bar' });
     this.el = h('section', { class: 'screen cc-shell' }, h('div', { class: 'cc-shell-bg', 'aria-hidden': 'true' }), this.top, h('div', { class: 'cc-body' }, this.navEl, this.content), this.bar);
     this.lastSavedWeek = Math.floor((state.day + 3) / 7);
-    // browser automation hook (career-test.html?automation)
-    const hook = (globalThis as unknown as { __career?: Record<string, unknown> }).__career;
-    if (hook) hook.app = this;
+    // browser automation hook (?automation, see automationHook)
+    const hook = automationHook();
+    if (hook) {
+      hook.app = this;
+      hook.state = () => this.state;
+      /** debug: the coach puts the user in the starting XI of every match (for 3D tests) */
+      hook.forceStart = (on = true) => {
+        if (on) this.state.events.flags[DEBUG_FORCE_START] = 1;
+        else delete this.state.events.flags[DEBUG_FORCE_START];
+      };
+      /** debug: plays the career headlessly for n days (auto decisions), then re-renders */
+      hook.skipDays = (n: number) => {
+        autoPlay(this.state, this.state.day + n);
+        this.render();
+        return this.state.day;
+      };
+    }
     this.screen = withNav(
       {
         el: this.el,

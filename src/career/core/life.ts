@@ -622,6 +622,8 @@ export function monthlyFinances(state: CareerState, rng: Rng): void {
   }
   life.investments = life.investments.filter((i) => i.amount > 0);
   for (const p of life.properties) p.value = Math.round(p.value * (1 + 0.002 + rng.gauss(0, 0.006)));
+  // property he owns but does not live in is let out (a letting agent keeps a cut)
+  for (const p of life.properties) if (!livesIn(state, p)) addMoney(state, propertyRent(p), `Rent received (${housingDef(p.kind).name})`);
   if (life.charity.foundation) addMoney(state, -Math.round(2000 * city(state, life.cityId).cost), 'Foundation running costs');
   if (life.charity.foundation) life.charity.points += 2;
 }
@@ -727,11 +729,21 @@ export function moveHouse(state: CareerState, opt: HousingOption, buy: boolean):
   return null;
 }
 
+/** true when this owned property is his current home */
+export function livesIn(state: CareerState, p: { kind: string; cityId: number; district: number }): boolean {
+  const cur = state.life.housing;
+  return cur.owned && cur.kind === p.kind && p.cityId === state.life.cityId && p.district === state.life.district;
+}
+
+/** monthly rent an owned property brings in when it is let out */
+export function propertyRent(p: { value: number }): number {
+  return Math.round(p.value * 0.0035);
+}
+
 export function sellProperty(state: CareerState, index: number): number {
   const p = state.life.properties[index];
   if (!p) return 0;
-  const cur = state.life.housing;
-  if (cur.owned && cur.kind === p.kind && p.cityId === state.life.cityId && p.district === state.life.district) return 0;
+  if (livesIn(state, p)) return 0;
   const proceeds = Math.round(p.value * 0.96);
   addMoney(state, proceeds, `Sold property`);
   state.life.properties.splice(index, 1);

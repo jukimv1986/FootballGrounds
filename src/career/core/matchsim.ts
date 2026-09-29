@@ -40,6 +40,8 @@ export interface MatchOutcome {
   motmId: number;
   /** the user picked up an injury (days) */
   userInjuryDays: number;
+  /** a knockout draw went to extra time (goals scored in it are included in hg/ag) */
+  aet?: boolean;
 }
 
 export interface KnockoutRule {
@@ -240,10 +242,12 @@ function finishOutcome(rng: Rng, home: SimSideInput, away: SimSideInput, sh: Tea
   }
   // knockouts: extra time and penalties
   let pens: [number, number] | undefined;
+  let aet = false;
   if (ko.needed) {
     const aggH = hg + (ko.aggregate ? ko.aggregate[0] : 0);
     const aggA = ag + (ko.aggregate ? ko.aggregate[1] : 0);
     if (aggH === aggA) {
+      aet = true;
       const eh = rng.poisson(lh * 0.3);
       const ea = rng.poisson(la * 0.3);
       if (!fixedEvents) {
@@ -268,7 +272,66 @@ function finishOutcome(rng: Rng, home: SimSideInput, away: SimSideInput, sh: Tea
       motmId = l.id;
     }
   }
-  return { hg, ag, pens, events, lines, user: null, possession, shots, motmId, userInjuryDays: 0 };
+  return { hg, ag, pens, events, lines, user: null, possession, shots, motmId, userInjuryDays: 0, aet: aet || undefined };
+}
+
+/**
+ * Goals for part of a match that nobody watched (the rest of an abandoned 3D match): Poisson
+ * from the line-ups' expected goals scaled to the minutes left, NPC scorers and assists.
+ */
+export function simulateRemainder(rng: Rng, home: SimSideInput, away: SimSideInput, fromMinute: number, neutral = false): { goals: [number, number]; events: (ReportEvent & { npcId?: number; assistId?: number })[] } {
+  const sides = [home, away];
+  const [lh, la] = expectedGoals(lineupStrength(home.lineup), lineupStrength(away.lineup), neutral);
+  const left = clamp((90 - fromMinute) / 90, 0, 1);
+  const goals: [number, number] = [rng.poisson(lh * left), rng.poisson(la * left)];
+  const events: (ReportEvent & { npcId?: number; assistId?: number })[] = [];
+  for (const s of [0, 1] as const) {
+    const pool = sides[s].lineup.starters.filter((e) => e.npcId !== USER_ID);
+    for (let i = 0; i < goals[s]; i++) {
+      const scorer = pickWeighted(rng, pool.filter((e) => e.pos !== 'GK'), (e) => SCORER_W[e.pos] * Math.pow(e.rating / 70, 3));
+      const helper = scorer && rng.chance(0.7) ? pickWeighted(rng, pool.filter((e) => e.npcId !== scorer.npcId), (e) => ASSIST_W[e.pos]) : null;
+      events.push({ minute: rng.int(Math.min(90, fromMinute + 1), 90), type: 'goal', side: s, name: scorer ? sides[s].name(scorer.npcId) : 'Goal', assist: helper ? sides[s].name(helper.npcId) : undefined, npcId: scorer?.npcId, assistId: helper?.npcId });
+    }
+  }
+  events.sort((a, b) => a.minute - b.minute);
+  return { goals, events };
+}
+
+export interface KnockoutSettlement {
+  /** extra-time goals per side */
+  extra: [number, number];
+  pens?: [number, number];
+  aet: boolean;
+  events: (ReportEvent & { npcId?: number })[];
+}
+
+/**
+ * Settles a knockout draw that a simulator did not (the 3D engine always stops after 90
+ * minutes): extra time from the two line-ups' expected goals, then penalties if still level.
+ * The user is not credited with extra-time goals (he is tired, and it is simulated).
+ */
+export function settleKnockoutDraw(rng: Rng, home: SimSideInput, away: SimSideInput, ko: KnockoutRule, hg: number, ag: number, neutral = false): KnockoutSettlement {
+  const none: KnockoutSettlement = { extra: [0, 0], aet: false, events: [] };
+  if (!ko.needed) return none;
+  const aggH = hg + (ko.aggregate?.[0] ?? 0);
+  const aggA = ag + (ko.aggregate?.[1] ?? 0);
+  if (aggH !== aggA) return none;
+  const sides = [home, away];
+  const sh = lineupStrength(home.lineup);
+  const sa = lineupStrength(away.lineup);
+  const [lh, la] = expectedGoals(sh, sa, neutral);
+  const extra: [number, number] = [rng.poisson(lh * 0.3), rng.poisson(la * 0.3)];
+  const events: (ReportEvent & { npcId?: number })[] = [];
+  for (const s of [0, 1] as const) {
+    const pool = sides[s].lineup.starters.filter((e) => e.npcId !== USER_ID && e.pos !== 'GK');
+    for (let i = 0; i < extra[s]; i++) {
+      const scorer = pickWeighted(rng, pool, (e) => SCORER_W[e.pos] * Math.pow(e.rating / 70, 3));
+      events.push({ minute: rng.int(91, 120), type: 'goal', side: s, name: scorer ? sides[s].name(scorer.npcId) : 'Goal', text: 'extra time', npcId: scorer?.npcId });
+    }
+  }
+  events.sort((a, b) => a.minute - b.minute);
+  const pens = aggH + extra[0] === aggA + extra[1] ? shootout(rng, (sh.overall - sa.overall) / 5) : undefined;
+  return { extra, pens, aet: true, events };
 }
 
 // ----- detailed sim (user's matches)
@@ -499,11 +562,11 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
           if (rng.chance(pComp)) {
             stats.passesCompleted++;
             rating += 0.006;
-            if (rng.chance(KEYPASS_RATE[u.pos] * (0.4 + visionSkill * 1.3))) {
+            if (rng.chance(KEYPASS_RATE[u.pos] * (0.3 + visionSkill * 0.9))) {
               stats.keyPasses++;
               rating += 0.07;
-              // most key passes lead to a half-chance; vision makes them clearer
-              chance(us, minute, 'user', 0.55 + visionSkill * 0.35);
+              // most key passes lead to a half-chance (~0.1-0.2 xG); vision makes them clearer
+              chance(us, minute, 'user', 0.3 + visionSkill * 0.25);
             }
           } else {
             rating -= 0.028;
@@ -571,10 +634,12 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
   let hg = goals[0];
   let ag = goals[1];
   let pens: [number, number] | undefined;
+  let aetPlayed = false;
   if (ko.needed) {
     const aggH = hg + (ko.aggregate?.[0] ?? 0);
     const aggA = ag + (ko.aggregate?.[1] ?? 0);
     if (aggH === aggA) {
+      aetPlayed = true;
       // extra time, compressed
       for (let minute = 91; minute <= 120; minute++) {
         for (const s of [0, 1] as const) if (rng.chance(baseRate[s] * 0.85)) chance(s, minute, 'team');
@@ -605,6 +670,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
   outcome.possession = possession;
   outcome.user = stats;
   outcome.userInjuryDays = userInjuryDays;
+  outcome.aet = aetPlayed || undefined;
   if (stats.minutes > 0) {
     const bestNpc = outcome.lines.reduce((m, l) => Math.max(m, l.rating), 0);
     if (stats.rating >= bestNpc) {

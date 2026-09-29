@@ -591,6 +591,8 @@ export interface UserMatchStats {
   tackles: number;
   interceptions: number;
   saves: number;
+  /** ball touches (3D matches) */
+  touches?: number;
   fouls: number;
   yellow: number;
   red: number;
@@ -609,6 +611,8 @@ export interface MatchReport {
   hg: number;
   ag: number;
   pens?: [number, number];
+  /** decided after extra time */
+  aet?: boolean;
   userSide: 0 | 1;
   events: ReportEvent[];
   user: UserMatchStats | null;

@@ -13,6 +13,7 @@
 import { FileSystem } from '../../blunted/managers/filesystem';
 import { ResourceManagerPool } from '../../blunted/managers/resourcemanagerpool';
 import { Surface } from '../../blunted/scene/resources/surface';
+import { registerGeneratedUrl } from '../../ui/dom';
 import type { Registration } from './bridge';
 import type { KitPattern, RGB } from '../core/types';
 
@@ -229,8 +230,12 @@ export function canPaint(): boolean {
 }
 
 /** paints and registers kits (and logos) for every generated side of a registration */
-export async function prepareKits(reg: Registration, patterns: [KitPattern, KitPattern], sponsors: [string, string], shorts: [string, string]): Promise<void> {
+export async function prepareKits(reg: Registration, patterns: [KitPattern, KitPattern], sponsors: [string, string], shorts: [string, string], crestUrls?: [string, string]): Promise<void> {
   if (!canPaint()) return;
+  // the scoreboard shows logos through dataUrl(): serve the same crests the career screens show
+  for (const side of [0, 1] as const) {
+    if (crestUrls?.[side] && reg.logoUrls[side].startsWith('fgcareer/')) registerGeneratedUrl(`databases/default/${reg.logoUrls[side]}`, crestUrls[side]);
+  }
   for (const side of [0, 1] as const) {
     if (!reg.generatedKits[side]) continue;
     for (const n of [1, 2]) {

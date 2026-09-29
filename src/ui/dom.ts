@@ -38,7 +38,20 @@ export function clear(el: HTMLElement): void {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
 
-/** URL of a file under public/data */
+const generatedUrls = new Map<string, string>();
+
+/**
+ * Serves a generated image (e.g. a career-mode club crest, as a data: URL) under a data path, so
+ * everything that shows images through dataUrl() — the in-match scoreboard too — finds it.
+ */
+export function registerGeneratedUrl(path: string, url: string | null): void {
+  if (url) generatedUrls.set(path, url);
+  else generatedUrls.delete(path);
+}
+
+/** URL of a file under public/data (or of a generated image registered under that path) */
 export function dataUrl(path: string): string {
+  const generated = generatedUrls.get(path);
+  if (generated) return generated;
   return './data/' + path.split('/').map(encodeURIComponent).join('/');
 }

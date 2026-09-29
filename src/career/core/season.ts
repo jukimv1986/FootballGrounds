@@ -32,7 +32,8 @@ export function leagueAwards(state: CareerState, leagueId: Id): SeasonAward[] {
   const players = state.world.npcs.filter((n) => clubs.has(n.clubId) && n.squad === 'first');
   const u = state.user;
   const userHere = clubs.has(u.clubId);
-  const ul = u.season.league;
+  // NPC season lines count every competitive club match: compare like with like
+  const ul = sumLines([u.season.league, u.season.cup, u.season.continental]);
   const awards: SeasonAward[] = [];
   // top scorer
   let best = players.reduce((m, n) => (n.season.goals > (m?.season.goals ?? -1) ? n : m), players[0]);

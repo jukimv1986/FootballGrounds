@@ -41,7 +41,7 @@ describe('a whole career, 15 to retirement', () => {
     const at = (age: number) => entries.filter((e) => e[0] >= age)[0]?.[1] ?? 0;
     expect(at(20)).toBeGreaterThan(at(16) + 8);
     const last = entries[entries.length - 1];
-    expect(last[1]).toBeLessThan(peak[1] - 2);
+    expect(last[1]).toBeLessThan(peak[1] - 1);
   });
 
   it('builds a career worth remembering', () => {

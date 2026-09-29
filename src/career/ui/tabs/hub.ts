@@ -20,10 +20,9 @@ import type { CareerState, Fixture } from '../../core/types';
 
 function expectedRole(state: CareerState, f: Fixture): string {
   if (f.national) return 'In the squad';
-  if (f.youth) return 'U19 side';
   if (state.user.injury) return 'Injured';
-  if (state.user.banned > 0) return 'Suspended';
-  const lu = selectLineup(state, state.user.clubId, { seed: f.id * 31 + state.user.clubId });
+  if (state.user.banned > 0 && !f.youth) return 'Suspended';
+  const lu = f.youth ? selectLineup(state, state.user.clubId, { youth: true, userEligible: true, seed: f.id * 31 + state.user.clubId }) : selectLineup(state, state.user.clubId, { seed: f.id * 31 + state.user.clubId });
   return lu.userRole === 'start' ? 'Likely to start' : lu.userRole === 'bench' ? 'Likely on the bench' : 'Not in the squad (yet)';
 }
 

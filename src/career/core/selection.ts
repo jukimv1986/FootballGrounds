@@ -136,10 +136,25 @@ export interface SelectOptions {
   seed?: number;
 }
 
+/** positions a player can cover without looking lost */
+const NEAR_POSITIONS: Record<Position, Position[]> = {
+  GK: [],
+  CB: ['DM', 'LB', 'RB'],
+  LB: ['RB', 'LM', 'CB'],
+  RB: ['LB', 'RM', 'CB'],
+  DM: ['CM', 'CB'],
+  CM: ['DM', 'AM'],
+  AM: ['CM', 'CF', 'LM', 'RM'],
+  LM: ['RM', 'AM', 'LB'],
+  RM: ['LM', 'AM', 'RB'],
+  CF: ['AM', 'LM', 'RM'],
+};
+
+/** coaches prefer players in their natural position (a small bonus in rating points) */
 function slotAffinity(natural: Position, slot: Position): number {
   if (natural === slot) return 0;
   if (natural === 'GK' || slot === 'GK') return -40;
-  return 0;
+  return NEAR_POSITIONS[natural].includes(slot) ? -1.5 : -4;
 }
 
 /** what the coach thinks of the user (a bonus in rating points) */
@@ -165,6 +180,9 @@ function ageBonus(age: number, coach: Coach | undefined): number {
   return (coach?.youthFaith ?? 0.5) * (22 - age) * 0.35 - 1.5;
 }
 
+/** debug flag (browser automation only): the user always makes the starting XI */
+export const DEBUG_FORCE_START = 'debugForceStart';
+
 /** development-squad match counters kept in the event flags (persisted with the save) */
 export const YOUTH_BENCH_RUN = 'youthBenchRun';
 export const YOUTH_START_RUN = 'youthStartRun';
@@ -177,11 +195,11 @@ export const YOUTH_START_RUN = 'youthStartRun';
  */
 export function youthDevelopmentBonus(state: CareerState, coach: Coach | undefined): number {
   const [lo, hi] = potentialRange(state);
-  const talent = clamp(((lo + hi) / 2 - 80) * 0.35, -1, 4.5);
-  const faith = 0.5 + Math.max(0.55, coach?.youthFaith ?? 0.5) * 1.2;
+  const talent = clamp(((lo + hi) / 2 - 82) * 0.3, -1.5, 3.5);
+  const faith = Math.max(0.55, coach?.youthFaith ?? 0.5) - 1.1;
   const flags = state.events.flags;
-  const owed = Math.min(7, (flags[YOUTH_BENCH_RUN] ?? 0) * 1.7);
-  const rested = Math.max(0, (flags[YOUTH_START_RUN] ?? 0) - 4) * 0.7;
+  const owed = Math.min(12, (flags[YOUTH_BENCH_RUN] ?? 0) * 2.4);
+  const rested = Math.max(0, (flags[YOUTH_START_RUN] ?? 0) - 3) * 1.0;
   return talent + faith + owed - rested;
 }
 
@@ -199,6 +217,8 @@ export function selectLineup(state: CareerState, teamId: Id, opts: SelectOptions
   else if (opts.youth) pool = youthOf(state, teamId);
   else pool = squadOf(state, teamId);
   pool = pool.filter((n) => n.injuredUntil <= day && n.banned <= 0);
+  // the oldest academy players are often away with the first team or the reserves
+  if (opts.youth) pool = pool.filter((n) => ageAt(n.born, day) < 18 || !rng.chance(0.3));
 
   interface Cand {
     id: Id;
@@ -230,7 +250,7 @@ export function selectLineup(state: CareerState, teamId: Id, opts: SelectOptions
     const perceived = coachOpinion(state, coach) + ageBonus(age, coach);
     const youthPenalty = !opts.youth && f.squad === 'youth' ? -2.5 + (coach?.youthFaith ?? 0.5) * 2 : 0;
     const energyPenalty = f.energy < 35 ? -3 : 0;
-    const dev = opts.youth ? youthDevelopmentBonus(state, coach) : 0;
+    const dev = (opts.youth ? youthDevelopmentBonus(state, coach) : 0) + (state.events.flags[DEBUG_FORCE_START] ? 60 : 0);
     const noise = rng.gauss(0, opts.youth ? 2.4 : 0.8);
     cands.push({
       id: USER_ID,

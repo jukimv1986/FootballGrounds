@@ -1,0 +1,41 @@
+/* Shared design tokens for all DOM UI (menus, career, HUD). */
+:root {
+  --bg: #0b1410;
+  --bg-elev: #13211a;
+  --bg-elev-2: #1b2e24;
+  --panel: rgba(12, 22, 17, 0.86);
+  --line: rgba(255, 255, 255, 0.10);
+  --line-strong: rgba(255, 255, 255, 0.22);
+  --text: #eef4ef;
+  --text-dim: #9fb3a7;
+  --text-faint: #6b8174;
+  --accent: #3ddc84;        /* pitch green */
+  --accent-strong: #22b86a;
+  --accent-ink: #062414;
+  --gold: #f2c14e;
+  --danger: #ff5d5d;
+  --info: #5db2ff;
+  --warn: #ffb14e;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --font: 'Alegreya Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display: 'Alegreya Sans SC', 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif;
+  --gap: 12px;
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+* { box-sizing: border-box; }
+
+button { font: inherit; color: inherit; }

@@ -394,7 +394,7 @@ export function GenerateAutoAnims(templates: Animation[], autoAnims: Animation[]
 }
 
 /** adds touches around main touch; returns the touch frame (-1 if none) */
-function AddExtraTouches(animation: Animation, _playerNode: Node, bodyParts: Geometry[], nodeMap: NodeMap): number {
+export function AddExtraTouches(animation: Animation, _playerNode: Node, bodyParts: Geometry[], nodeMap: NodeMap): number {
   const touch = (animation.GetExtension('football') as FootballAnimationExtension).GetFirstTouch(new Vector3(0), -1);
   const animBallPos = touch.position;
   const animTouchFrame = touch.frame;

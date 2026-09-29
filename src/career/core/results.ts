@@ -13,7 +13,7 @@ import { ageCurve, shortName, virtualPlayers } from './players';
 import { ovrScale } from './attributes';
 import { clubLevel } from './world';
 import { Rng, clamp } from './rng';
-import { USER_ID, lineupPlayer, quickLineup, selectLineup, type Lineup } from './selection';
+import { USER_ID, YOUTH_BENCH_RUN, YOUTH_START_RUN, lineupPlayer, quickLineup, selectLineup, type Lineup } from './selection';
 import { matchExperience } from './training';
 import { reactToMatch } from './social';
 import { statsToArray } from './attributes';
@@ -184,6 +184,7 @@ export function simulateUserMatch(state: CareerState, ctx: UserMatchContext, rng
 export function applyUserMatch(state: CareerState, ctx: UserMatchContext, out: MatchOutcome, rng: Rng, played3D: boolean): MatchReport {
   const f = ctx.fixture;
   const [hl, al] = ctx.lineups;
+  if (f.youth) trackYouthSelection(state, ctx.role);
   applyOutcome(state, f, out, hl, al, rng);
   const user = state.user;
   const type = compTypeOf(state, f);
@@ -268,6 +269,18 @@ export function applyUserMatch(state: CareerState, ctx: UserMatchContext, out: M
     addMessage(state, { from: 'Mum', kind: 'family', subject: 'THREE GOALS!!!', body: 'We watched every minute. Your dad has not stopped shouting. So proud of you. xx' });
   }
   return report;
+}
+
+/** development-squad rotation memory: consecutive starts / matches without a start (fit only) */
+export function trackYouthSelection(state: CareerState, role: MatchRole): void {
+  const flags = state.events.flags;
+  if (role === 'start') {
+    flags[YOUTH_START_RUN] = (flags[YOUTH_START_RUN] ?? 0) + 1;
+    flags[YOUTH_BENCH_RUN] = 0;
+  } else if (!state.user.injury && state.user.banned <= 0) {
+    flags[YOUTH_BENCH_RUN] = (flags[YOUTH_BENCH_RUN] ?? 0) + 1;
+    flags[YOUTH_START_RUN] = 0;
+  }
 }
 
 function addToLine(line: StatLine, us: UserMatchStats, started: boolean, cleanSheet: boolean): void {

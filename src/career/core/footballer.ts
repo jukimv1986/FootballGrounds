@@ -67,14 +67,22 @@ const TRAIT_PROFILE: Partial<Record<TraitKey, [number, number][]>> = {
   hothead: [[16, -0.06], [7, 0.04], [6, 0.03]],
 };
 
+/**
+ * Birth day of a player who is exactly `age` (whole years) on the season's start date (1 July):
+ * a birthday after 1 July falls in the year before.
+ */
+export function birthDayFor(age: number, month: number, day: number, startSeason: number): number {
+  const afterStart = month > 7 || (month === 7 && day > 1);
+  return dayOf(startSeason - age - (afterStart ? 1 : 0), month, day);
+}
+
 export function hasTrait(f: Footballer, t: TraitKey): boolean {
   return f.traits.includes(t);
 }
 
 export function createFootballer(input: CreatorInput, startSeason: number, rng: Rng, contract: Contract): Footballer {
   const talent = TALENTS.find((t) => t.key === input.talent) ?? TALENTS[1];
-  const birthYear = startSeason - input.age;
-  const born = dayOf(birthYear, input.birthMonth, input.birthDay);
+  const born = birthDayFor(input.age, input.birthMonth, input.birthDay, startSeason);
   // personal profile: position profile + traits + body type + a little randomness
   const p = [...POSITION_PROFILE[input.pos]];
   for (const t of input.traits) for (const [i, d] of TRAIT_PROFILE[t] ?? []) p[i] += d;

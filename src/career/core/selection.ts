@@ -9,7 +9,7 @@
 
 import { POSITIONS, ovrFromStatArray, statsToArray, type Position } from './attributes';
 import { ageAt } from './dates';
-import { conditionFactor } from './footballer';
+import { conditionFactor, potentialRange } from './footballer';
 import { club, coachOf, npc, squadOf, youthOf } from './index';
 import { npcOvrAt } from './players';
 import { Rng, clamp } from './rng';
@@ -165,6 +165,26 @@ function ageBonus(age: number, coach: Coach | undefined): number {
   return (coach?.youthFaith ?? 0.5) * (22 - age) * 0.35 - 1.5;
 }
 
+/** development-squad match counters kept in the event flags (persisted with the save) */
+export const YOUTH_BENCH_RUN = 'youthBenchRun';
+export const YOUTH_START_RUN = 'youthStartRun';
+
+/**
+ * Academy football is about development minutes, not only results: the academy coach plays the
+ * prospects he rates (scouted potential), gives game time to a kid who has been left out for a
+ * few matches ("minutes owed") and rotates a regular now and then. Returned in rating points on
+ * top of his usual score, only for development-squad fixtures.
+ */
+export function youthDevelopmentBonus(state: CareerState, coach: Coach | undefined): number {
+  const [lo, hi] = potentialRange(state);
+  const talent = clamp(((lo + hi) / 2 - 80) * 0.35, -1, 4.5);
+  const faith = 0.5 + Math.max(0.55, coach?.youthFaith ?? 0.5) * 1.2;
+  const flags = state.events.flags;
+  const owed = Math.min(7, (flags[YOUTH_BENCH_RUN] ?? 0) * 1.7);
+  const rested = Math.max(0, (flags[YOUTH_START_RUN] ?? 0) - 4) * 0.7;
+  return talent + faith + owed - rested;
+}
+
 /** selects the XI and bench of a club (or a pool) for a match */
 export function selectLineup(state: CareerState, teamId: Id, opts: SelectOptions = {}): Lineup {
   const clubRec = club(state, teamId);
@@ -186,10 +206,12 @@ export function selectLineup(state: CareerState, teamId: Id, opts: SelectOptions
     score: (slot: Position) => number;
     rating: (slot: Position) => number;
   }
+  // academy selection is looser: coaches rotate and share out development minutes
+  const noiseSd = opts.youth ? 2.4 : 1.1;
   const cands: Cand[] = pool.map((n) => {
     const age = ageAt(n.born, day);
     const cond = 0.93 + (n.form / 100) * 0.1;
-    const noise = rng.gauss(0, 1.1) + (opts.rotation ? (age > 28 ? -2.5 : age < 22 ? 2 : 0) : 0);
+    const noise = rng.gauss(0, noiseSd) + (opts.rotation ? (age > 28 ? -2.5 : age < 22 ? 2 : 0) : 0);
     const bonus = ageBonus(age, coach) + noise;
     return {
       id: n.id,
@@ -208,11 +230,14 @@ export function selectLineup(state: CareerState, teamId: Id, opts: SelectOptions
     const perceived = coachOpinion(state, coach) + ageBonus(age, coach);
     const youthPenalty = !opts.youth && f.squad === 'youth' ? -2.5 + (coach?.youthFaith ?? 0.5) * 2 : 0;
     const energyPenalty = f.energy < 35 ? -3 : 0;
+    const dev = opts.youth ? youthDevelopmentBonus(state, coach) : 0;
+    const noise = rng.gauss(0, opts.youth ? 2.4 : 0.8);
     cands.push({
       id: USER_ID,
       natural: f.pos,
       rating: (slot) => ovrFromStatArray(userStats, slot) * cond,
-      score: (slot) => ovrFromStatArray(userStats, slot) * (0.94 + 0.06 * (f.form / 100)) * (0.92 + 0.08 * (f.fitness / 100)) + perceived + youthPenalty + energyPenalty + rng.gauss(0, 0.8) + slotAffinity(f.pos, slot),
+      // out of position he is only a stopgap (the coach picks him where he trains)
+      score: (slot) => ovrFromStatArray(userStats, slot) * (0.94 + 0.06 * (f.form / 100)) * (0.92 + 0.08 * (f.fitness / 100)) + perceived + youthPenalty + energyPenalty + dev * (slot === f.pos ? 1 : 0.6) + noise + slotAffinity(f.pos, slot),
     });
   }
 

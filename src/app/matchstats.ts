@@ -382,11 +382,6 @@ export class MatchStatsCollector {
   protected RegisterShot(record: PlayerRecord, teamID: number): void {
     record.stats.shots++;
     this.pendingShot = { record, teamID, time_ms: this.ActualTime() };
-    // a shot is not a pass
-    if (this.pendingPass && this.pendingPass.record === record) {
-      record.stats.passes = Math.max(0, record.stats.passes - 1);
-      this.pendingPass = null;
-    }
   }
 
   protected PollShots(): void {

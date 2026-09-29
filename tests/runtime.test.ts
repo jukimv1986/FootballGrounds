@@ -533,3 +533,138 @@ describe('MatchStatsCollector', () => {
     expect(result.events).toEqual([]);
   });
 });
+
+describe('WebAudioBackend', () => {
+  class FakeParam {
+    value = 1;
+    setValueAtTime(v: number) {
+      this.value = v;
+    }
+    setTargetAtTime(v: number) {
+      this.value = v;
+    }
+  }
+  class FakeNode {
+    connected = true;
+    connect() {}
+    disconnect() {
+      this.connected = false;
+    }
+  }
+  class FakeGain extends FakeNode {
+    gain = new FakeParam();
+  }
+  class FakeSource extends FakeNode {
+    buffer: unknown = null;
+    loop = false;
+    playbackRate = new FakeParam();
+    started = 0;
+    stopped = 0;
+    onended: (() => void) | null = null;
+    start() {
+      this.started++;
+    }
+    stop() {
+      this.stopped++;
+    }
+  }
+
+  async function setup() {
+    const sources: FakeSource[] = [];
+    const gains: FakeGain[] = [];
+    let decodes = 0;
+    const ctx = {
+      currentTime: 0,
+      state: 'running',
+      destination: {},
+      createGain: () => {
+        const g = new FakeGain();
+        gains.push(g);
+        return g;
+      },
+      createBufferSource: () => {
+        const s = new FakeSource();
+        sources.push(s);
+        return s;
+      },
+      decodeAudioData: async (bytes: ArrayBuffer) => {
+        decodes++;
+        return { duration: 1, length: bytes.byteLength };
+      },
+      resume: async () => undefined,
+      suspend: async () => undefined,
+    };
+    const { WebAudioBackend } = await import('../src/blunted/audio/webaudio');
+    const { Scene3D } = await import('../src/blunted/scene/scene3d');
+    const { Sound } = await import('../src/blunted/scene/objects/sound');
+    const { SoundBuffer } = await import('../src/blunted/scene/resources/soundbuffer');
+    const { Resource } = await import('../src/blunted/scene/resources/resource');
+    const config = new Properties();
+    const audio = new WebAudioBackend({ context: ctx as unknown as AudioContext, target: null, config });
+    audio.scanInterval = 1;
+    const scene = new Scene3D();
+    const makeSound = (name: string, file: string) => {
+      const buffer = new SoundBuffer();
+      buffer.bytes = new ArrayBuffer(16);
+      buffer.filename = file;
+      const sound = new Sound(name);
+      sound.SetSoundBuffer(new Resource(file, buffer));
+      scene.AddObject(sound);
+      return sound;
+    };
+    return { audio, scene, sources, gains, config, makeSound, decodes: () => decodes };
+  }
+
+  it('starts loops poked before they were first seen and follows gain/pitch live', async () => {
+    const t = await setup();
+    const crowd = t.makeSound('crowd01', 'media/sounds/crowd01.wav');
+    crowd.SetLoop(true);
+    crowd.SetGain(0);
+    crowd.Poke();
+    await t.audio.PrepareScene(t.scene);
+    t.audio.Update(t.scene);
+    expect(t.sources.length).toBe(1);
+    expect(t.sources[0].started).toBe(1);
+    expect(t.sources[0].loop).toBe(true);
+    crowd.SetGain(0.35);
+    crowd.SetPitch(1.1);
+    t.audio.Update(t.scene);
+    expect(t.gains[1].gain.value).toBeCloseTo(0.35); // gains[0] is the master
+    expect(t.sources[0].playbackRate.value).toBeCloseTo(1.1);
+    t.audio.Update(t.scene);
+    expect(t.sources.length).toBe(1); // no restart without a new Poke
+  });
+
+  it('restarts one-shots on every poke, caches decoding, and stops removed sounds', async () => {
+    const t = await setup();
+    const ball = t.makeSound('ballsound', 'media/sounds/ballsound.wav');
+    await t.audio.PrepareScene(t.scene);
+    ball.Poke();
+    t.audio.Update(t.scene);
+    ball.Poke();
+    t.audio.Update(t.scene);
+    expect(t.sources.length).toBe(2);
+    expect(t.sources[0].stopped).toBe(1);
+    expect(t.decodes()).toBe(1);
+    t.scene.DeleteObject(ball);
+    t.audio.Update(t.scene);
+    expect(t.sources[1].stopped).toBe(1);
+  });
+
+  it('applies the master volume from audio_volume and StopAll', async () => {
+    const t = await setup();
+    const whistle = t.makeSound('whistle', 'media/sounds/whistle2.wav');
+    await t.audio.PrepareScene(t.scene);
+    t.config.Set('audio_volume', 0.25);
+    whistle.Poke();
+    t.audio.Update(t.scene);
+    expect(t.gains[0].gain.value).toBeCloseTo(0.5);
+    t.config.Set('audio_volume', 0.5);
+    t.audio.Update(t.scene);
+    expect(t.gains[0].gain.value).toBeCloseTo(1);
+    t.audio.StopAll();
+    expect(t.sources[0].stopped).toBe(1);
+    t.audio.Update(t.scene);
+    expect(t.sources.length).toBe(1);
+  });
+});

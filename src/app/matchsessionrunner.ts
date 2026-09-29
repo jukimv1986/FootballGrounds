@@ -19,7 +19,7 @@ import { _default_Difficulty, _default_MatchDuration, e_MatchPhase } from '../ga
 import { GameLoop, type FrameInfo } from '../game/gameloop';
 import { GameTask, e_GameTaskMessage } from '../game/gametask';
 import { GetConfiguration, GetControllers, GetScene3D, ResetDebugPilons, SetMenuTask, GetMenuTask } from '../game/globals';
-import { OnControllersChanged, SetControllerListLocked, SetKeyboardCapture, SetTouchControlsVisible } from '../game/hid/controllers';
+import { InitControllers, SetControllerListLocked, SetKeyboardCapture, SetTouchControlsVisible } from '../game/hid/controllers';
 import { MenuTask } from '../game/menu/menutask';
 import type { Match } from '../game/onthepitch/match';
 import type { Player } from '../game/onthepitch/player/player';
@@ -45,6 +45,8 @@ export interface MatchRuntime {
   overlayParent?: HTMLElement;
   /** frame hook (fps meters, debug) */
   onFrame?: (info: FrameInfo) => void;
+  /** show the overlay's loading panel (title + progress bar) while assets load (default true) */
+  showLoadingPanel?: boolean;
 }
 
 /** everything under media/ a match reads (directories are preloaded recursively) */
@@ -113,6 +115,17 @@ export function CollectMatchAssets(matchData: MatchData | null, assets: readonly
   return [...files];
 }
 
+/** preloads the match files (skipped when a synchronous disk reader is installed, i.e. Node tests) */
+export async function PreloadMatchAssets(matchData: MatchData | null, assets: readonly string[] = MATCH_ASSETS, onProgress?: (fraction: number) => void): Promise<void> {
+  if (FileSystem.syncReader) {
+    onProgress?.(1);
+    return;
+  }
+  const files = CollectMatchAssets(matchData, assets);
+  await FileSystem.Preload(files, (done, total) => onProgress?.(done / Math.max(1, total)));
+  onProgress?.(1);
+}
+
 /** temporarily overrides config values; Restore() puts the old ones back */
 class ConfigOverrides {
   protected saved: [string, string | null, number][] = [];
@@ -161,7 +174,6 @@ class MatchSession {
   protected reject!: (error: unknown) => void;
   protected unsubscribeControllers: (() => void) | null = null;
   protected visibilityHandler: (() => void) | null = null;
-  protected controllerCount = 0;
 
   constructor(runtime: MatchRuntime, options: MatchSessionOptions) {
     this.runtime = runtime;
@@ -183,7 +195,7 @@ class MatchSession {
 
   protected Progress(fraction: number): void {
     this.options.onLoadProgress?.(fraction);
-    this.overlay?.ShowLoading(this.options.title, fraction);
+    if (this.runtime.showLoadingPanel !== false) this.overlay?.ShowLoading(this.options.title, fraction);
   }
 
   protected async Start(): Promise<void> {
@@ -217,15 +229,14 @@ class MatchSession {
     menuTask.SetTeamKitNum(1, options.awayKit ?? 2);
 
     // assets
-    const files = CollectMatchAssets(this.matchData, this.runtime.assets ?? MATCH_ASSETS);
-    await FileSystem.Preload(files, (done, total) => this.Progress((done / Math.max(1, total)) * 0.9));
+    await PreloadMatchAssets(this.matchData, this.runtime.assets ?? MATCH_ASSETS, (fraction) => this.Progress(fraction * 0.9));
     this.Progress(0.92);
     await nextFrame();
     await nextFrame();
 
     // match (heavy, synchronous: animations, pitch generation, players)
+    if (GetControllers().length === 0) InitControllers();
     SetControllerListLocked(true);
-    this.controllerCount = GetControllers().length;
     this.gameTask = new GameTask();
     this.gameTask.Action(e_GameTaskMessage.e_GameTaskMessage_StartMatch);
     const match = this.Match()!;
@@ -251,10 +262,19 @@ class MatchSession {
     SetTouchControlsVisible(true);
     SetKeyboardCapture(true);
     this.audio?.Resume();
-    this.unsubscribeControllers = OnControllersChanged((list) => {
-      if (list.length > this.controllerCount) this.overlay?.Toast('Controller connected', { kind: 'info' });
-      this.controllerCount = list.length;
-    });
+    if (typeof window !== 'undefined') {
+      const onConnected = () => this.overlay?.Toast('Controller connected', { kind: 'info' });
+      const onDisconnected = () => {
+        this.overlay?.Toast('Controller disconnected', { kind: 'warn' });
+        this.overlay?.OpenPauseMenu();
+      };
+      window.addEventListener('gamepadconnected', onConnected);
+      window.addEventListener('gamepaddisconnected', onDisconnected);
+      this.unsubscribeControllers = () => {
+        window.removeEventListener('gamepadconnected', onConnected);
+        window.removeEventListener('gamepaddisconnected', onDisconnected);
+      };
+    }
     if (typeof document !== 'undefined') {
       this.visibilityHandler = () => {
         if (document.hidden) this.overlay?.OpenPauseMenu();
@@ -375,8 +395,13 @@ class MatchSession {
       });
     }
 
-    this.Cleanup();
+    if (this.finished) return; // failed meanwhile (already cleaned up and rejected)
     this.finished = true;
+    try {
+      this.Cleanup();
+    } catch (error) {
+      console.error('MatchSession cleanup failed', error);
+    }
     this.resolve(result);
   }
 
@@ -473,7 +498,7 @@ export async function SimulateMatch(options: MatchSessionOptions, maxSteps = 2_0
   menuTask.SetControllerSetup(options.sides);
   menuTask.SetTeamKitNum(0, options.homeKit ?? 1);
   menuTask.SetTeamKitNum(1, options.awayKit ?? 2);
-  await FileSystem.Preload(CollectMatchAssets(matchData), (done, total) => options.onLoadProgress?.(done / Math.max(1, total)));
+  await PreloadMatchAssets(matchData, MATCH_ASSETS, options.onLoadProgress);
 
   const gameTask = new GameTask();
   try {

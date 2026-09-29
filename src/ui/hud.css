@@ -1,25 +1,27 @@
 /* In-match layers: Gui2 widgets (#hud), touch controls and the match overlay (#match-overlay).
-   Stacking: canvas < #hud < .touch-controls < #match-overlay. Uses the tokens from theme.css. */
+   Stacking: canvas < #hud < #app (menus, hidden during a match) < .touch-controls (900)
+   < #match-overlay (1000, also hosts the loading panel above the menus). Tokens from theme.css. */
 
-/* ----- Gui2 widgets (src/game/ui/gui2.ts) ----- */
+/* ----- Gui2 widgets (src/game/ui/gui2.ts) -----
+   Defaults only: :where() keeps them at zero specificity so widget styles (ingame.css) win. */
 
+/* layer order (z-index) is set in index.html: canvas 0, #hud 1, #app 2 */
 #hud {
   position: fixed;
   inset: 0;
-  z-index: 10;
   overflow: hidden;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-#hud .gui2-view {
+:where(#hud .gui2-view) {
   position: absolute;
   box-sizing: border-box;
   pointer-events: none;
 }
 
-#hud .gui2-caption {
+:where(#hud .gui2-caption) {
   color: #fff;
   font-family: var(--font-display);
   font-weight: 800;
@@ -39,7 +41,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-#hud .gui2-image {
+:where(#hud .gui2-image) {
   background-repeat: no-repeat;
   background-position: center;
   background-size: 100% 100%;

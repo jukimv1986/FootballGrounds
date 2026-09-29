@@ -57,6 +57,10 @@ export class WebAudioBackend {
   protected muted = false;
   protected masterVolume = -1;
   protected gestureListener: (() => void) | null = null;
+  /** frames between scene graph scans for new / removed Sound objects */
+  scanInterval = 20;
+  protected lastScanFrame = -Infinity;
+  protected lastScene: Scene3D | null = null;
 
   constructor(options: WebAudioOptions = {}) {
     this.config = options.config ?? null;
@@ -197,29 +201,43 @@ export class WebAudioBackend {
     await Promise.race([Promise.all(jobs), new Promise((resolve) => setTimeout(resolve, timeout_ms))]);
   }
 
-  /** call once per rendered frame */
+  /**
+   * Call once per rendered frame. The scene graph is walked for Sound objects every
+   * `scanInterval` frames (the match creates its sounds up front); known sounds update every frame.
+   */
   Update(scene3D: Scene3D): void {
     if (!this.ctx || !this.master) return;
     this.frame++;
     this.UpdateMasterVolume();
     const time = nowMs();
-    for (const sound of scene3D.GetObjects<Sound>(e_ObjectType.e_ObjectType_Sound)) this.UpdateSound(sound, time);
-    for (const [sound, st] of this.sounds) {
-      if (st.seenFrame !== this.frame) {
-        // no longer in the scene graph
-        this.StopSource(st);
-        this.sounds.delete(sound);
+    if (scene3D !== this.lastScene || this.frame - this.lastScanFrame >= this.scanInterval) {
+      this.lastScene = scene3D;
+      this.lastScanFrame = this.frame;
+      for (const sound of scene3D.GetObjects<Sound>(e_ObjectType.e_ObjectType_Sound)) {
+        this.Track(sound).seenFrame = this.frame;
+      }
+      for (const [sound, st] of this.sounds) {
+        if (st.seenFrame !== this.frame) {
+          // no longer in the scene graph
+          this.StopSource(st);
+          this.sounds.delete(sound);
+        }
       }
     }
+    for (const [sound, st] of this.sounds) this.UpdateSound(sound, st, time);
   }
 
-  protected UpdateSound(sound: Sound, time: number): void {
+  protected Track(sound: Sound): SoundState {
     let st = this.sounds.get(sound);
     if (!st) {
+      // lastPlayRequests 0: a sound poked before it was first seen (crowd loops) still starts
       st = { lastPlayRequests: 0, source: null, gain: null, appliedGain: -1, appliedPitch: -1, pendingStart: false, pendingSince_ms: 0, seenFrame: 0 };
       this.sounds.set(sound, st);
     }
-    st.seenFrame = this.frame;
+    return st;
+  }
+
+  protected UpdateSound(sound: Sound, st: SoundState, time: number): void {
 
     if (sound.playRequests !== st.lastPlayRequests) {
       st.lastPlayRequests = sound.playRequests;
@@ -327,6 +345,8 @@ export class WebAudioBackend {
   Reset(): void {
     this.StopAll();
     this.sounds.clear();
+    this.lastScene = null;
+    this.lastScanFrame = -Infinity;
   }
 
   /** drops the decoded-buffer cache (memory) */

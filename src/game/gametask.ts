@@ -54,10 +54,9 @@ export class GameTask {
     switch (message) {
       case e_GameTaskMessage.e_GameTaskMessage_StartMatch: {
         if (Verbose()) console.debug('*gametaskmessage: starting match');
-        const matchData = GetMenuTask().GetMatchData();
-        const tmpMatch = new Match(matchData, GetControllers());
         if (this.match) throw new Error('GameTask: a match is already running');
-        this.match = tmpMatch;
+        const matchData = GetMenuTask().GetMatchData();
+        this.match = new Match(matchData, GetControllers());
         GetScheduler().ResetTaskSequenceTime('game');
         break;
       }

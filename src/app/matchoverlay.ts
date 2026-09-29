@@ -331,6 +331,14 @@ export class MatchOverlay {
   // ----- input
 
   protected OnKey(e: KeyboardEvent): void {
+    if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') && this.panel !== 'none' && this.panel !== 'loading') {
+      // arrows move between the panel's buttons (sliders keep their own arrow handling)
+      if ((document.activeElement as HTMLElement | null)?.tagName !== 'INPUT') {
+        e.preventDefault();
+        this.MoveFocus(e.code === 'ArrowUp' ? -1 : 1);
+      }
+      return;
+    }
     if (e.code !== 'Escape' || e.repeat) return;
     if (this.panel === 'pause') {
       e.preventDefault();

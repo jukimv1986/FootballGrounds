@@ -9,7 +9,7 @@ it('probe', () => {
   const anims = new AnimCollection(new Scene3D());
   anims.Load('media/animations');
   const all = anims.GetAnimations();
-  const t = (label: string, f: () => void, runs = 2000) => { for (let i = 0; i < 200; i++) f(); const s = performance.now(); for (let i = 0; i < runs; i++) f(); console.log(label, ((performance.now() - s) / runs * 1000).toFixed(1), 'us'); };
+  const t = (label: string, f: () => void, runs = 100) => { for (let i = 0; i < 20; i++) f(); const s = performance.now(); for (let i = 0; i < runs; i++) f(); console.log(label, ((performance.now() - s) / runs * 1000).toFixed(1), 'us'); };
   let c = 0;
   t('type compare', () => { for (let i = 0; i < all.length; i++) if (all[i].GetAnimType() === 'shot') c++; });
   t('getvariable x1', () => { for (let i = 0; i < all.length; i++) if (all[i].GetVariable('lastditch') === 'true') c++; });

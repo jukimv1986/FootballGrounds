@@ -205,6 +205,12 @@ export interface Competition {
   runnerUpId?: Id | null;
   /** two-legged knockout ties */
   twoLegs?: boolean;
+  /** knockout: day of each round (first leg) */
+  roundDays: number[];
+  /** knockout: day of each round's second leg (two-legged ties; 0 = single match) */
+  legDays?: number[];
+  /** national team level (internationals) */
+  level?: NationalLevel;
 }
 
 export interface Fixture {

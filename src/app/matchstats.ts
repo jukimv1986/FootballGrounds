@@ -177,6 +177,8 @@ const tackleFunctions = new Set<e_FunctionType>([e_FunctionType.e_FunctionType_I
 const defenderRoles = new Set<e_PlayerRole>([e_PlayerRole.e_PlayerRole_CB, e_PlayerRole.e_PlayerRole_LB, e_PlayerRole.e_PlayerRole_RB]);
 
 const assistWindow_ms = 12000;
+/** repeated contacts by the same player closer together than this count as one touch */
+const repeatedContact_ms = 150;
 const shotResolveWindow_ms = 5000;
 
 export interface MatchStatsOptions {
@@ -325,8 +327,14 @@ export class MatchStatsCollector {
 
   protected OnTouch(touch: TouchEvent): void {
     const stats = touch.record.stats;
-    stats.touches++;
     const previous = this.touches.length > 0 ? this.touches[this.touches.length - 1] : null;
+
+    // the ball resting against a player registers a body contact every step: one touch
+    if (previous && previous.record === touch.record && touch.time_ms - previous.time_ms <= repeatedContact_ms && !this.IsAction(touch)) {
+      previous.time_ms = touch.time_ms;
+      return;
+    }
+    stats.touches++;
 
     if (previous && previous.record !== touch.record) {
       // resolve the previous pass
@@ -357,6 +365,12 @@ export class MatchStatsCollector {
 
     this.touches.push(touch);
     if (this.touches.length > 64) this.touches.splice(0, this.touches.length - 64);
+  }
+
+  /** a deliberate pass / shot / tackle touch (never merged into a previous contact) */
+  protected IsAction(touch: TouchEvent): boolean {
+    const f = touch.functionType;
+    return f !== null && (passFunctions.has(f) || tackleFunctions.has(f) || f === e_FunctionType.e_FunctionType_Shot);
   }
 
   protected IsGoalkeeper(record: PlayerRecord): boolean {

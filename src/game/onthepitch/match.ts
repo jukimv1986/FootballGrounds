@@ -139,6 +139,11 @@ export class MatchSignal {
     this.slots = [];
   }
 
+  /** boost::signals2 num_slots() */
+  num_slots(): number {
+    return this.slots.length;
+  }
+
   emit(match: Match): void {
     for (const slot of [...this.slots]) slot(match);
   }
@@ -1142,7 +1147,11 @@ export class Match {
       this.cameraNearCap = 1;
       this.cameraFarCap = 220;
 
-      if (this.goalScoredTimer === 6000) {
+      // PORT: in the C++ the (always connected) in-game page answered this with the replay page,
+      // which unpaused the match when done. Here the match only pauses when something is connected
+      // to sig_OnExtendedReplayMoment, otherwise nothing would ever unpause it. Note the slot is
+      // called on every Process() while paused here (goalScoredTimer stays at 6000).
+      if (this.goalScoredTimer === 6000 && this.sig_OnExtendedReplayMoment.num_slots() > 0) {
         this.pause = true;
         this.sig_OnExtendedReplayMoment.emit(this);
       }

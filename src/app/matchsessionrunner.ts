@@ -26,7 +26,7 @@ import type { Player } from '../game/onthepitch/player/player';
 import { setMenuLayerVisible } from '../ui/router';
 import { MatchOverlay, type CameraSettings, type FullTimeScorer } from './matchoverlay';
 import { SetMatchSessionRunner, type MatchResult, type MatchSessionOptions, type MatchSessionRunner } from './matchsession';
-import { MatchStatsCollector } from './matchstats';
+import { MatchStatsCollector, type StatsMatchView } from './matchstats';
 
 /** what the runner needs from the renderer (ThreeRenderer implements it) */
 export interface MatchRenderer {
@@ -136,6 +136,13 @@ class ConfigOverrides {
 }
 
 let sessionRunning = false;
+let defaultAudio: WebAudioBackend | null = null;
+
+/** one shared backend (browsers limit the number of AudioContexts) */
+function DefaultAudio(): WebAudioBackend {
+  if (!defaultAudio) defaultAudio = new WebAudioBackend({ config: GetConfiguration });
+  return defaultAudio;
+}
 
 class MatchSession {
   protected runtime: MatchRuntime;
@@ -159,7 +166,7 @@ class MatchSession {
   constructor(runtime: MatchRuntime, options: MatchSessionOptions) {
     this.runtime = runtime;
     this.options = options;
-    this.audio = runtime.audio === undefined ? new WebAudioBackend({ config: GetConfiguration }) : runtime.audio;
+    this.audio = runtime.audio === undefined ? DefaultAudio() : runtime.audio;
   }
 
   Run(): Promise<MatchResult> {
@@ -226,7 +233,8 @@ class MatchSession {
 
     if (options.lockedPlayerDatabaseID !== undefined) this.LockPlayer(match, options.lockedPlayerDatabaseID);
 
-    this.stats = new MatchStatsCollector(match, {
+    const statsView: StatsMatchView = match; // compile-time check: the port satisfies the stats view
+    this.stats = new MatchStatsCollector(statsView, {
       onEvent: (event) => {
         if (event.type === 'halftime') this.overlay?.Toast('Half time', { kind: 'info' });
       },

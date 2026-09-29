@@ -170,8 +170,8 @@ describe('AnimCollection', () => {
     // anims that start idle are rotated to start facing forward
     const idle = anims.GetAnimations().filter((a) => a.GetIncomingVelocity() < 1.8);
     expect(idle.length).toBeGreaterThan(0);
-    const worst = idle.map((a) => [Math.abs(a.GetIncomingBodyAngle()), a.GetName()] as const).sort((a, b) => b[0] - a[0]);
-    console.log('PROBE', worst.slice(0, 6), idle.filter((a) => Math.abs(a.GetIncomingBodyAngle()) > 0.001).length, idle.length);
+    // (Euler Z of a tilted body is not exactly 0 after the rotation, e.g. 000_back_to_front_holdball: 0.06 rad)
+    for (const anim of idle) expect(Math.abs(anim.GetIncomingBodyAngle())).toBeLessThan(0.1);
   });
 
   it('assigns quadrants', () => {
@@ -210,14 +210,17 @@ describe('AnimCollection', () => {
     for (const i of shots) expect(anims.GetAnim(i).GetAnimType()).toBe('shot');
 
     // performance: the humanoid runs this many times per second
-    const start = performance.now();
-    const runs = 200;
-    for (let r = 0; r < runs; r++) {
-      const ds: number[] = [];
-      anims.CrudeSelection(ds, r % 2 === 0 ? query : shotQuery);
-    }
-    const perRun = (performance.now() - start) / runs;
-    console.log(`CrudeSelection over ${anims.GetAnimations().length} anims: ${perRun.toFixed(3)} ms per query`);
+    const bench = (q: CrudeSelectionQuery, runs: number): number => {
+      const start = performance.now();
+      for (let r = 0; r < runs; r++) {
+        const ds: number[] = [];
+        anims.CrudeSelection(ds, q);
+      }
+      return (performance.now() - start) / runs;
+    };
+    bench(query, 200);
+    bench(shotQuery, 200);
+    console.log(`CrudeSelection over ${anims.GetAnimations().length} anims: movement ${bench(query, 1000).toFixed(4)} ms, shot ${bench(shotQuery, 1000).toFixed(4)} ms per query`);
   });
 });
 

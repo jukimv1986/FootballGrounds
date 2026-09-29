@@ -138,6 +138,23 @@ class FileSystemImpl {
     this.texts.set(normalize(path), contents);
   }
 
+  /**
+   * Registers a generated image under a path (e.g. career-mode kit textures): Exists(), Resolve(),
+   * GetImage() and IsLoaded() see it, so Preload() never tries to download it.
+   */
+  PutImage(path: string, image: DecodedImage): void {
+    const p = normalize(path);
+    this.images.set(p, image);
+    if (!this.manifestSet.has(p)) {
+      this.manifest.push(p);
+      this.manifestSet.add(p);
+      const name = p.substring(p.lastIndexOf('/') + 1).toLowerCase();
+      const list = this.byFileName.get(name) ?? [];
+      list.push(p);
+      this.byFileName.set(name, list);
+    }
+  }
+
   GetText(path: string): string {
     const p = normalize(path);
     const cached = this.texts.get(p);

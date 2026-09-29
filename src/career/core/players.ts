@@ -6,7 +6,7 @@
 // after 34. The user's footballer does NOT use this curve (he develops through training), but
 // his training model is tuned so an average diligent career lands on the same arc.
 
-import { POSITION_PROFILE, STAT_COUNT, ovrFromStatArray, statsFromProfile, type Position } from './attributes';
+import { POSITION_PROFILE, STAT_COUNT, abilityForOvr, ovrFromStatArray, statsFromProfile, type Position } from './attributes';
 import { ageAt } from './dates';
 import { randomName } from './data/names';
 import { Rng, clamp, interpolate } from './rng';
@@ -260,4 +260,21 @@ export function npcName(npc: { first: string; last: string }): string {
 
 export function shortName(p: { first: string; last: string }): string {
   return `${p.first.charAt(0)}. ${p.last}`;
+}
+
+/**
+ * Throwaway players for sides that are not stored in the world (opponents' youth teams, small
+ * national teams): full NPC records (so they can be registered in the 3D engine) calibrated to
+ * a target rating.
+ */
+export function virtualPlayers(rng: Rng, spec: { idBase: number; nat: string; positions: readonly Position[]; targetOvr: number; ageMin: number; ageMax: number; day: number; spread?: number }): NPC[] {
+  return spec.positions.map((pos, i) => {
+    const age = rng.range(spec.ageMin, spec.ageMax);
+    const n = createNpc(rng, { id: spec.idBase - i, nat: spec.nat, pos, clubId: -1, squad: 'first', born: spec.day - Math.round(age * 365.25), peak: 0.6, day: spec.day, contractEnd: 0, wage: 0 });
+    const target = spec.targetOvr + rng.gauss(0, spec.spread ?? 3);
+    const ability = clamp(abilityForOvr(target), 0.15, 0.98);
+    n.peak = clamp(ability / Math.max(0.3, ageCurve(age, n.bloom)), 0.2, 1.2);
+    refreshNpc(n, spec.day);
+    return n;
+  });
 }

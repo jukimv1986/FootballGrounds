@@ -466,6 +466,8 @@ export interface Life {
   plan: WeekPlan;
   /** club training intensity the player brings: 0 light, 1 normal, 2 hard */
   clubIntensity: 0 | 1 | 2;
+  /** personal focus during club sessions (part of the session's XP goes here) */
+  clubFocus: string | null;
   /** extra-session intensity */
   extraIntensity: 0 | 1 | 2;
   /** one-off plan overrides for specific day/slot: key `${day}:${slot}` */

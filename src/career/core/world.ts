@@ -131,7 +131,7 @@ function generateCountry(world: World, def: CountryDef, rng: Rng, opts: Generate
 
   // city capacity for clubs
   const capacity = new Map<Id, number>();
-  for (const c of cities) capacity.set(c.id, Math.max(1, Math.floor(1 + c.size * 2.2)));
+  for (const c of cities) capacity.set(c.id, Math.max(1, Math.floor(1 + c.size * 2.6)));
   const usedNames = new Set<string>();
   const usedShort = new Set<string>();
 
@@ -161,10 +161,12 @@ function generateCountry(world: World, def: CountryDef, rng: Rng, opts: Generate
   // generated clubs: bigger cities are more likely to host top-flight football
   const slots: City[] = [];
   const cityOrder = [...cities].sort((a, b) => b.size - a.size + rng.gauss(0, 0.12));
-  for (let round = 0; round < 4 && slots.length < TOP_TIER_SIZE + SECOND_TIER_SIZE - dbClubs.length; round++) {
+  const wanted = TOP_TIER_SIZE + SECOND_TIER_SIZE - dbClubs.length;
+  // big cities host several clubs; once their capacity is used up, towns get a second club
+  for (let round = 0; round < 12 && slots.length < wanted; round++) {
     for (const c of cityOrder) {
-      if ((capacity.get(c.id) ?? 0) > round) slots.push(c);
-      if (slots.length >= TOP_TIER_SIZE + SECOND_TIER_SIZE - dbClubs.length) break;
+      if ((capacity.get(c.id) ?? 0) > round || (round >= 3 && slots.filter((s) => s === c).length < 3)) slots.push(c);
+      if (slots.length >= wanted) break;
     }
   }
   const nTop = TOP_TIER_SIZE - dbClubs.length;

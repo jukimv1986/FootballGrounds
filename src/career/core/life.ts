@@ -23,7 +23,8 @@ import { roundMoney } from './players';
 import { Rng, clamp } from './rng';
 import { makePost } from './social';
 import { applyXp, trainSession, xpMultiplier } from './training';
-import type { CareerState, HousingKind, Person, PersonRole, Slot, TransportKind } from './types';
+import type { CareerState, HousingKind, Person, PersonRole, TransportKind } from './types';
+import type { Slot } from './dates';
 
 // ----- people
 
@@ -31,6 +32,12 @@ export function addPerson(state: CareerState, p: Omit<Person, 'id' | 'lastContac
   const person: Person = { id: state.life.nextPersonId++, lastContact: state.day, since: state.day, ...p };
   state.life.people.push(person);
   return person;
+}
+
+/** relationship gains shrink as a relationship approaches its best (diminishing returns) */
+export function bumpAffinity(p: Person, delta: number): void {
+  if (delta > 0) p.affinity = clamp(p.affinity + delta * Math.max(0.08, 1 - p.affinity / 112), 0, 100);
+  else p.affinity = clamp(p.affinity + delta, 0, 100);
 }
 
 export function peopleOf(state: CareerState, role: PersonRole): Person[] {
@@ -72,11 +79,22 @@ export function refreshClubPeople(state: CareerState, rng: Rng): void {
       const n = state.world.npcs.find((x) => x.id === p.npcId);
       if (!n || n.clubId !== f.clubId) {
         // former teammates stay friends if they were close
-        if (p.affinity >= 65) p.role = 'friend';
-        else p.gone = true;
+        if (p.affinity >= 70) {
+          p.role = 'friend';
+          p.job = 'former teammate';
+        } else p.gone = true;
       }
     }
+    if (p.role === 'mentor' && p.npcId !== undefined) {
+      const n = state.world.npcs.find((x) => x.id === p.npcId);
+      if (!n || n.clubId !== f.clubId) p.role = 'friend';
+    }
   }
+  // keep the circle of friends to a realistic size: the closest six
+  const friends = state.life.people.filter((p) => p.role === 'friend' && !p.gone).sort((a, b) => b.affinity - a.affinity);
+  for (const p of friends.slice(6)) p.gone = true;
+  // forget people who left your life long ago (keeps saves small)
+  state.life.people = state.life.people.filter((p) => !p.gone || state.day - p.lastContact < 400);
   const c = club(state, f.clubId);
   const coach = c ? state.world.coaches.find((x) => x.id === c.coachId) : undefined;
   if (coach) addPerson(state, { first: coach.first, last: coach.last, role: 'coach', affinity: 50, job: `Head coach, ${c!.name}`, npcId: coach.id });
@@ -191,7 +209,7 @@ function applyEffects(state: CareerState, e: ActivityEffects, rng: Rng, scale = 
   if (e.family) {
     h.family = clamp(h.family + e.family * scale * 0.5, 0, 100);
     for (const p of state.life.people) if (!p.gone && (p.role === 'mother' || p.role === 'father' || p.role === 'sibling')) {
-      p.affinity = clamp(p.affinity + e.family * scale * 0.35, 0, 100);
+      bumpAffinity(p, e.family * scale * 0.35);
       p.lastContact = state.day;
     }
   }
@@ -206,7 +224,7 @@ function applyEffects(state: CareerState, e: ActivityEffects, rng: Rng, scale = 
     if (coach) coach.affinity = clamp(coach.affinity + e.coach * scale, 0, 100);
   }
   if (e.teammates) for (const p of peopleOf(state, 'teammate')) {
-    p.affinity = clamp(p.affinity + e.teammates * scale, 0, 100);
+    bumpAffinity(p, e.teammates * scale);
     p.lastContact = state.day;
   }
   if (e.sleepPenalty) state.life.sleepMult *= e.sleepPenalty;
@@ -291,7 +309,7 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
     case 'partner_time': {
       const p = partner(state);
       if (p) {
-        p.affinity = clamp(p.affinity + (def.special === 'date' ? 7 : 6), 0, 100);
+        bumpAffinity(p, def.special === 'date' ? 7 : 6);
         p.lastContact = state.day;
         summary = def.special === 'date' ? `A lovely evening with ${p.first}.` : `Quality time with ${p.first}.`;
       }
@@ -301,7 +319,8 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
       const mates = peopleOf(state, 'teammate');
       if (mates.length) {
         const m = rng.pick(mates);
-        m.affinity = clamp(m.affinity + 4, 0, 100);
+        bumpAffinity(m, 5);
+        m.lastContact = state.day;
         summary = `Good times with ${m.first} and the lads.`;
       }
       break;
@@ -309,7 +328,7 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
     case 'friends': {
       const friends = peopleOf(state, 'friend');
       for (const p of friends) {
-        p.affinity = clamp(p.affinity + 4, 0, 100);
+        bumpAffinity(p, 5);
         p.lastContact = state.day;
       }
       summary = friends.length ? `Caught up with ${friends.map((p) => p.first).slice(0, 2).join(' and ')}.` : 'You enjoyed a coffee on your own.';
@@ -321,7 +340,7 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
     case 'agent': {
       const a = agent(state);
       if (a) {
-        a.affinity = clamp(a.affinity + 5, 0, 100);
+        bumpAffinity(a, 5);
         a.lastContact = state.day;
         state.events.flags.agentPush = state.day;
         summary = `${a.first} ${a.last} will sound out a few clubs and brands.`;
@@ -463,11 +482,14 @@ export function weeklyCosts(state: CareerState): { label: string; amount: number
   if (!life.housing.owned && life.housing.weekly > 0) out.push({ label: `Rent (${housingDef(life.housing.kind).name})`, amount: life.housing.weekly });
   for (const p of life.properties) out.push({ label: `Upkeep (${housingDef(p.kind).name})`, amount: Math.round(p.value * 0.0004) });
   const diet = DIETS.find((d) => d.kind === life.diet)!;
-  out.push({ label: `Food (${diet.name})`, amount: Math.round(diet.weekly * c.cost) });
+  // academy digs and the family home include meals and bills
+  const provided = life.housing.kind === 'digs' || life.housing.kind === 'family';
+  const food = provided && diet.kind !== 'nutritionist' ? Math.round(diet.weekly * c.cost * 0.15) : Math.round(diet.weekly * c.cost);
+  out.push({ label: `Food (${diet.name})`, amount: food });
   const t = TRANSPORT.find((x) => x.kind === life.transport)!;
   out.push({ label: `Transport (${t.name})`, amount: t.weekly });
   const status = housingDef(life.housing.kind).status;
-  out.push({ label: 'Living costs', amount: Math.round((70 + status * 12) * c.cost) });
+  out.push({ label: 'Living costs', amount: Math.round((provided ? 25 : 70 + status * 12) * c.cost) });
   return out;
 }
 
@@ -519,9 +541,16 @@ export function dailyLife(state: CareerState, rng: Rng): void {
   for (const person of life.people) {
     if (person.gone) continue;
     const since = state.day - person.lastContact;
-    const rate = person.role === 'partner' ? 0.28 : person.role === 'friend' ? 0.12 : person.role === 'teammate' ? 0.05 : person.role === 'agent' ? 0.04 : person.role === 'coach' ? 0 : 0.08;
-    if (since > 2) person.affinity = clamp(person.affinity - rate * (hasTrait(f, 'family') && person.role !== 'friend' && person.role !== 'partner' && person.role !== 'teammate' ? 1.3 : 1), 0, 100);
-    if (person.role === 'coach') person.affinity = clamp(person.affinity + (50 - person.affinity) * 0.004, 0, 100);
+    if (person.role === 'coach' || person.role === 'agent' || person.role === 'mentor') {
+      // professional relationships drift back to neutral rather than fade
+      person.affinity = clamp(person.affinity + ((person.role === 'coach' ? 50 : 58) - person.affinity) * 0.004, 0, 100);
+      continue;
+    }
+    // relationships fade a little every day and faster when neglected for a while
+    const rate = person.role === 'partner' ? 0.3 : person.role === 'friend' ? 0.22 : person.role === 'teammate' ? 0.07 : 0.1;
+    const familyBoost = hasTrait(f, 'family') && (person.role === 'mother' || person.role === 'father' || person.role === 'sibling') ? 1.3 : 1;
+    const neglect = since > 10 ? 1.6 : 1;
+    person.affinity = clamp(person.affinity - rate * familyBoost * neglect, 0, 100);
   }
   // mental fatigue builds up in the season
   life.fatigueMental = clamp(life.fatigueMental + (weekday(state.day) === 6 ? 0.5 : 1.3) - (life.vacation ? 6 : 0), 0, 100);

@@ -9,7 +9,7 @@ import { conditionFactor, fullName, hasTrait, refreshMarketValue, userAge } from
 import { startUserInjury } from './health';
 import { detailedSim, quickSim, type MatchOutcome, type SimSideInput, type UserSimInput } from './matchsim';
 import { addMessage, addMoney, addNotice, addPost, addTimeline } from './messages';
-import { shortName } from './players';
+import { shortName, virtualPlayers } from './players';
 import { Rng, clamp } from './rng';
 import { USER_ID, lineupPlayer, quickLineup, selectLineup, type Lineup } from './selection';
 import { matchExperience } from './training';
@@ -17,6 +17,7 @@ import { reactToMatch } from './social';
 import { statsToArray } from './attributes';
 import type { CareerState, CompType, Fixture, MatchReport, MatchRole, StatLine, UserMatchStats } from './types';
 import { buildNationalLineup } from './national';
+import { bumpAffinity } from './life';
 
 export function sideName(state: CareerState, lineup: Lineup): (id: number) => string {
   return (id: number) => {
@@ -41,19 +42,16 @@ export function lineupsFor(state: CareerState, f: Fixture, rng: Rng): [Lineup, L
   return [home, away];
 }
 
-/** opponents' youth sides are not stored: a virtual XI from the club's youth rating */
+/** opponents' youth sides are not stored: a virtual squad from the club's youth rating */
 export function virtualYouthLineup(state: CareerState, clubId: number, rng: Rng): Lineup {
   const c = club(state, clubId);
-  const r = new Rng(clubId * 977 + state.season);
-  const base = 40 + (c?.youthRating ?? 0.5) * 50;
-  const pos = ['GK', 'LB', 'CB', 'CB', 'RB', 'LM', 'CM', 'CM', 'RM', 'CF', 'CF'] as const;
-  const starters = pos.map((p, i) => ({ npcId: -1000 - i, pos: p, rating: base + r.gauss(0, 4) + rng.gauss(0, 1.5) }));
-  const virtual = starters.map((s, i) => ({
-    id: s.npcId,
-    first: ['Tom', 'Luca', 'Noah', 'Leo', 'Max', 'Sam', 'Jan', 'Ivo', 'Eli', 'Rui', 'Ben'][i],
-    last: `${c?.shortName ?? 'YTH'} #${i + 2}`,
-  })) as unknown as Lineup['virtual'];
-  return { teamId: clubId, formation: '4-4-2', starters, bench: [], userRole: 'out', virtual };
+  const r = new Rng(clubId * 977 + state.season * 13);
+  const target = 40 + (c?.youthRating ?? 0.5) * 50;
+  const positions = ['GK', 'LB', 'CB', 'CB', 'RB', 'LM', 'CM', 'CM', 'RM', 'CF', 'CF', 'GK', 'CB', 'CM', 'AM', 'CF'] as const;
+  const virtual = virtualPlayers(r, { idBase: -1000 - (clubId % 500) * 20, nat: c?.countryKey ?? 'ENG', positions, targetOvr: target, ageMin: 16, ageMax: 18.9, day: state.day });
+  const starters = virtual.slice(0, 11).map((n, i) => ({ npcId: n.id, pos: positions[i], rating: n.ovr + rng.gauss(0, 1.5) }));
+  const bench = virtual.slice(11).map((n) => ({ npcId: n.id, pos: n.pos, rating: n.ovr }));
+  return { teamId: clubId, formation: '4-4-2', starters, bench, userRole: 'out', virtual };
 }
 
 export function compTypeOf(state: CareerState, f: Fixture): CompType {
@@ -215,7 +213,7 @@ export function applyUserMatch(state: CareerState, ctx: UserMatchContext, out: M
         }
       }
     }
-    if (f.national) {
+    if (f.national && user.national === 'senior') {
       user.caps++;
       user.intlGoals += us.goals;
     }
@@ -224,9 +222,10 @@ export function applyUserMatch(state: CareerState, ctx: UserMatchContext, out: M
     const stage = type === 'continental' ? 1.6 : type === 'international' ? (user.national === 'senior' ? 1.8 : 0.6) : type === 'league' ? (tier === 1 ? 1 : 0.55) : type === 'cup' ? 0.8 : type === 'youth' ? 0.25 : 0.2;
     const perf = us.rating - 6.4 + us.goals * 0.6 + us.assists * 0.3 + (us.motm ? 0.5 : 0);
     const clubRep = club(state, user.clubId)?.reputation ?? 50;
-    user.rep.local = clamp(user.rep.local + perf * 0.9 * Math.max(0.3, stage), 0, 100);
-    user.rep.national = clamp(user.rep.national + perf * 0.45 * stage * (0.5 + clubRep / 150), 0, 100);
-    if (stage >= 1 || clubRep > 80) user.rep.world = clamp(user.rep.world + perf * 0.22 * stage * (clubRep / 90), 0, 100);
+    const room = (v: number) => Math.max(0.15, 1 - v / 110);
+    user.rep.local = clamp(user.rep.local + perf * 0.9 * Math.max(0.3, stage) * (perf > 0 ? room(user.rep.local) : 1), 0, 100);
+    user.rep.national = clamp(user.rep.national + perf * 0.5 * stage * (0.4 + clubRep / 130) * (perf > 0 ? room(user.rep.national) : 1), 0, 100);
+    if (stage >= 1 || clubRep > 75) user.rep.world = clamp(user.rep.world + perf * 0.3 * stage * Math.pow(clubRep / 90, 2) * (perf > 0 ? room(user.rep.world) : 1), 0, 100);
     const fame = hasTrait(user, 'media') ? 1.5 : 1;
     const baseFans = Math.max(200, (club(state, user.clubId)?.fans ?? 10000) * 0.0005);
     user.followers = Math.round(user.followers + Math.max(0, perf) * baseFans * stage * fame * rng.range(0.5, 1.2) + us.goals * baseFans * 0.6 * fame);
@@ -238,7 +237,7 @@ export function applyUserMatch(state: CareerState, ctx: UserMatchContext, out: M
     }
     // relationships
     const coach = state.life.people.find((p) => p.role === 'coach' && !p.gone);
-    if (coach && !f.national) coach.affinity = clamp(coach.affinity + (us.rating - 6.3) * 1.6, 0, 100);
+    if (coach && !f.national) bumpAffinity(coach, (us.rating - 6.4) * 1.5);
     if (out.userInjuryDays !== 0) startUserInjury(state, rng, 'match');
   }
 
@@ -330,7 +329,7 @@ export function buildReport(state: CareerState, ctx: UserMatchContext, out: Matc
 
 /** simulates all background fixtures of a day that are still unplayed */
 export function playDayFixtures(state: CareerState, day: number, rng: Rng, exceptId?: number): void {
-  const list = state.fixtures.filter((f) => f.day === day && !f.played && f.id !== exceptId && f.away !== 0);
+  const list = state.fixtures.filter((f) => f.day === day && !f.played && f.id !== exceptId);
   for (const f of list) {
     if (isUserFixture(state, f)) continue;
     playBackgroundFixture(state, f, rng);
@@ -352,6 +351,18 @@ export function userInYouthSide(state: CareerState, day: number): boolean {
   const u = state.user;
   if (u.squad === 'youth') return true;
   return userAge(state) < 21.5 && (state.events.flags.droppedToYouth ?? -99) >= day - 3;
+}
+
+/** the next fixture the user is (potentially) involved in */
+export function nextUserFixture(state: CareerState): Fixture | undefined {
+  let best: Fixture | undefined;
+  for (const f of state.fixtures) {
+    if (f.played || f.day < state.day) continue;
+    if (!isUserFixture(state, f)) continue;
+    if (f.youth && !userInYouthSide(state, f.day) && state.user.squad !== 'youth') continue;
+    if (!best || f.day < best.day || (f.day === best.day && f.slot < best.slot)) best = f;
+  }
+  return best;
 }
 
 export function userClubResults(state: CareerState, compId: string): Fixture[] {

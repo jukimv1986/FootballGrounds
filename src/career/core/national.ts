@@ -11,12 +11,12 @@ import { dayOf, formatDate, nextWeekday } from './dates';
 import { fullName, userAge, userOvr } from './footballer';
 import { fixturesOf, invalidateFixtures } from './index';
 import { addMessage, addNotice, addTimeline } from './messages';
-import { createNpc } from './players';
+import { virtualPlayers } from './players';
 import { Rng, clamp } from './rng';
 import { selectLineup, type Lineup } from './selection';
 import type { CareerState, Competition, Fixture, Id, NPC, NationalLevel } from './types';
 
-const LEVEL_OFFSET: Record<NationalLevel, number> = { senior: 0, U21: 9, U19: 15, U17: 21, none: 30 };
+const LEVEL_OFFSET: Record<NationalLevel, number> = { senior: 0, U21: 13, U19: 20, U17: 27, none: 30 };
 const LEVEL_MAX_AGE: Record<NationalLevel, number> = { senior: 99, U21: 21.9, U19: 19.9, U17: 17.9, none: 0 };
 
 export function initNationalTeams(state: CareerState): void {
@@ -68,15 +68,8 @@ function virtualSquad(state: CareerState, id: Id): NPC[] {
   const t = state.nationalTeams.find((x) => x.id === id)!;
   const rng = new Rng(key);
   const positions = ['GK', 'GK', 'CB', 'CB', 'CB', 'CB', 'LB', 'RB', 'DM', 'CM', 'CM', 'CM', 'AM', 'LM', 'RM', 'CF', 'CF', 'CF'] as const;
-  const age = t.level === 'U17' ? 16 : t.level === 'U19' ? 18 : t.level === 'U21' ? 20 : 26;
-  squad = positions.map((pos, i) => {
-    const n = createNpc(rng, { id: -2000 - i - (id % 1000) * 20, nat: t.nation, pos, clubId: -1, squad: 'first', born: state.day - Math.round((age + rng.range(0, 1.8)) * 365.25), peak: 0.5, day: state.day, contractEnd: 0, wage: 0 });
-    // set the rating directly: virtual players are calibrated to the team strength
-    const target = t.strength + rng.gauss(0, 3);
-    n.ovr = target;
-    n.ability = clamp(abilityForOvr(target), 0.2, 0.95);
-    return n;
-  });
+  const age = t.level === 'U17' ? 16 : t.level === 'U19' ? 18 : t.level === 'U21' ? 20 : 25;
+  squad = virtualPlayers(rng, { idBase: -2000 - (id % 1000) * 20, nat: t.nation, positions, targetOvr: t.strength, ageMin: age, ageMax: age + (t.level === 'senior' ? 8 : 1.8), day: state.day });
   if (virtualCache.size > 200) virtualCache.clear();
   virtualCache.set(key, squad);
   return squad;

@@ -12,29 +12,29 @@
 // Decline: from ~30 physical stats erode daily (faster after 34), technique from ~32, mental
 // barely. Fitness, diet and professionalism slow the decline; they cannot stop it.
 
-import { STAT_NAMES, statGroup, type StatName } from './attributes';
+import { POSITION_WEIGHTS, STAT_NAMES, statGroup, type StatName } from './attributes';
 import { ageAt, weekday } from './dates';
-import { DIETS, INTENSITY, trainingDef, type TrainingKey } from './data/lifestyle';
+import { DIETS, INTENSITY, TRAINING, trainingDef, type TrainingKey } from './data/lifestyle';
 import { hasTrait } from './footballer';
 import { club, coachOf, fixturesOn } from './index';
 import { Rng, clamp, interpolate } from './rng';
 import type { CareerState } from './types';
 
 /** base stat gain per XP point */
-export const GROWTH_RATE = 0.00135;
+export const GROWTH_RATE = 0.0016;
 
 const AGE_GROWTH: [number, number][] = [
   [14, 1.3],
   [15, 1.25],
   [18, 1.15],
-  [21, 1.0],
-  [23, 0.72],
-  [25, 0.48],
-  [27, 0.3],
-  [29, 0.18],
-  [31, 0.1],
-  [34, 0.05],
-  [40, 0.02],
+  [21, 1.02],
+  [23, 0.88],
+  [25, 0.68],
+  [27, 0.46],
+  [29, 0.28],
+  [31, 0.15],
+  [34, 0.07],
+  [40, 0.03],
 ];
 
 const DECLINE: Record<'physical' | 'technical' | 'mental', [number, number][]> = {
@@ -137,6 +137,34 @@ export interface SessionResult {
   injured: boolean;
 }
 
+/**
+ * The session type that would raise his rating the most right now: sum over the session's stats
+ * of (OVR weight at his position) x (session weight) x (room to grow). Used for the "recommended"
+ * badge in the training screen and by the auto-policy.
+ */
+export function bestTrainingFocus(state: CareerState, exclude: TrainingKey[] = []): TrainingKey {
+  const f = state.user;
+  const w = POSITION_WEIGHTS[f.pos];
+  let best: TrainingKey = 'fitness';
+  let bestV = -1;
+  for (const def of TRAINING) {
+    if (def.key === 'recovery' || exclude.includes(def.key)) continue;
+    if (def.key === 'goalkeeping' && f.pos !== 'GK') continue;
+    let v = 0;
+    for (const [name, sw] of def.stats) {
+      const stat = name as StatName;
+      const i = STAT_NAMES.indexOf(stat);
+      v += w[i] * sw * gapFactor(f.stats[stat], naturalCap(state, stat));
+    }
+    v /= def.energy > 0 ? 0.6 + def.energy / 40 : 1;
+    if (v > bestV) {
+      bestV = v;
+      best = def.key;
+    }
+  }
+  return best;
+}
+
 /** a full training session (energy, sharpness, fitness, XP, injury roll) */
 export function trainSession(state: CareerState, rng: Rng, key: TrainingKey, ctx: XpContext): SessionResult {
   const f = state.user;
@@ -146,7 +174,12 @@ export function trainSession(state: CareerState, rng: Rng, key: TrainingKey, ctx
   const scale = ctx.scale ?? 1;
   let energy = def.energy * (def.energy > 0 ? I.energy * (1.15 - stamina * 0.35) : 1) * scale;
   const xp = xpMultiplier(state, ctx);
-  const gains = applyXp(state, key, xp);
+  const focus = ctx.source === 'club' ? state.life.clubFocus : null;
+  const gains = applyXp(state, key, focus && focus !== key && key !== 'recovery' ? xp * 0.7 : xp);
+  if (focus && focus !== key && key !== 'recovery') {
+    // personal focus inside the group session (extra reps, individual drills)
+    for (const [k, v] of Object.entries(applyXp(state, focus as TrainingKey, xp * 0.35))) gains[k as StatName] = (gains[k as StatName] ?? 0) + (v ?? 0);
+  }
   f.energy = clamp(f.energy - energy, 0, 100);
   f.sharpness = clamp(f.sharpness + def.sharpness * (0.6 + ctx.intensity * 0.3) * scale, 0, 100);
   f.fitness = clamp(f.fitness + def.fitness * (0.6 + ctx.intensity * 0.35) * scale * (f.fitness > 85 ? 0.4 : 1), 0, 100);
@@ -228,8 +261,8 @@ export function clubSessionFor(state: CareerState, day: number): TrainingKey | n
   if (mine(day)) return null;
   if (wd === 6) return null; // Sunday off
   if (mine(day - 1)) return 'recovery';
+  // the day before a match: sharpen up (set pieces / tactical shape); otherwise normal work
   if (mine(day + 1)) return f.pos === 'GK' ? 'goalkeeping' : wd % 2 === 0 ? 'setpieces' : 'tactical';
-  if (mine(day + 2)) return 'tactical';
   const style = coach?.style ?? 'balanced';
   const rotation: Record<string, TrainingKey[]> = {
     pressing: ['fitness', 'speed', 'defending', 'passing', 'fitness', 'ballcontrol'],
@@ -239,7 +272,8 @@ export function clubSessionFor(state: CareerState, day: number): TrainingKey | n
     balanced: ['fitness', 'passing', 'finishing', 'defending', 'ballcontrol', 'speed'],
   };
   const list = rotation[style];
-  const key = list[(day + (coach?.id ?? 0)) % list.length];
+  // cycle through the rotation by training day (not calendar day) so every type comes up
+  const key = list[(Math.floor(day / 7) * 5 + wd + (coach?.id ?? 0)) % list.length];
   if (f.pos === 'GK' && key !== 'fitness' && key !== 'strength') return 'goalkeeping';
   return key;
 }

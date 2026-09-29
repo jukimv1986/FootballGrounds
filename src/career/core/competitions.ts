@@ -246,10 +246,8 @@ export function createUserSeasonFixtures(state: CareerState, season: number, rng
     const day = nextWeekday(start + i * 7, 5);
     if (day >= cal.leagueStart - 2) break;
     const opp = rng.pick(pool);
-    addFixture(state, { compId: fId, round: i, day, slot: 1, home: rng.chance(0.5) ? userClub.id : opp.id, away: 0, youth: false });
-    const f = state.fixtures[state.fixtures.length - 1];
-    if (f.home === userClub.id) f.away = opp.id;
-    else f.away = userClub.id;
+    const home = rng.chance(0.5);
+    addFixture(state, { compId: fId, round: i, day, slot: 1, home: home ? userClub.id : opp.id, away: home ? opp.id : userClub.id });
   }
 }
 

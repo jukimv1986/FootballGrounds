@@ -335,6 +335,8 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
   const gkSkill = avgOf(st, ['physical_reaction', 'physical_reaction', 'physical_agility', 'mental_defensivepositioning', 'physical_balance', 'mental_calmness']);
   const stamina = avgOf(st, ['physical_stamina', 'mental_workrate']);
   const calm = st[S.mental_calmness];
+  const userEntry = [...sides[us].lineup.starters, ...sides[us].lineup.bench].find((e) => e.npcId === USER_ID);
+  const userRating = userEntry ? userEntry.rating : 60;
   const oppMid = strength[them].mid / 100;
   const oppDef = strength[them].def / 100;
   const oppAtt = strength[them].att / 100;
@@ -388,7 +390,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
     if (s === us && onPitch && creator === 'team') {
       const w = SCORER_W[u.pos];
       const total = entries.reduce((a, e) => a + SCORER_W[e.pos], 0) + w;
-      userShoots = rng.chance((w / total) * (0.9 + fatigueFree() * 0.2));
+      userShoots = rng.chance((w / total) * (0.78 + fatigueFree() * 0.17));
     }
     if (creator === 'user') {
       // the user created it: a teammate finishes
@@ -414,15 +416,18 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
       return;
     }
     let finishing: number;
-    if (userShoots) finishing = (u.pos === 'CB' ? headerSkill : finishSkill) * 100 * condition * fatigueFree();
-    else {
+    if (userShoots) {
+      // on the same scale as NPC ratings: his slot rating, tilted by how good a finisher he is
+      const skill = (u.pos === 'CB' || u.pos === 'GK' ? headerSkill : finishSkill) * 100;
+      finishing = (userRating + (skill - userRating) * 0.3) * fatigueFree();
+    } else {
       const e = entries.find((x) => x.npcId === shooterId);
       finishing = e ? e.rating : 60;
     }
     // the keeper facing the shot: the opponents' keeper, or the user himself when he is in goal
     const gkRate = s === us ? gkRating(them) : line === 'GK' && onPitch ? gkSkill * 100 * condition : gkRating(us);
     const pOnTarget = clamp(0.42 + (finishing - 60) * 0.006, 0.25, 0.78);
-    const pGoal = Math.min(pOnTarget * 0.92, clamp(CONV * quality * Math.exp(0.032 * (finishing - gkRate)), 0.04, 0.72));
+    const pGoal = Math.min(pOnTarget * 0.92, clamp(CONV * quality * Math.exp(0.024 * (finishing - gkRate)), 0.04, 0.6));
     const onTarget = rng.chance(pOnTarget);
     if (userShoots) {
       stats.shots++;
@@ -432,13 +437,13 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
     if (scored) {
       if (userShoots) {
         stats.goals++;
-        rating += 1.05;
+        rating += 0.85;
         scoreGoal(s, minute, null, assistId, 'finish');
         return;
       }
       if (assistId === null) {
         stats.assists++;
-        rating += 0.65;
+        rating += 0.55;
       }
       scoreGoal(s, minute, shooterId, assistId, 'finish');
     } else if (onTarget) {
@@ -481,7 +486,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
           const p = clamp(0.4 + (dribbleSkill * condition * fatigueFree() - oppDef) * 1.3, 0.12, 0.85);
           if (rng.chance(p)) {
             stats.dribbles++;
-            rating += 0.07;
+            rating += 0.06;
             if (rng.chance(0.14)) {
               if (rng.chance(0.55)) chance(us, minute, 'team', 1.15);
               else chance(us, minute, 'user', 1.1);
@@ -495,7 +500,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
             rating += 0.006;
             if (rng.chance(KEYPASS_RATE[u.pos] * (0.4 + visionSkill * 1.3))) {
               stats.keyPasses++;
-              rating += 0.08;
+              rating += 0.07;
               chance(us, minute, 'user', 1.05 + visionSkill * 0.4);
             }
           } else {

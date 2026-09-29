@@ -16,7 +16,7 @@ function fanHandle(state: CareerState, rng: Rng): string {
   return rng.pick([`@${c?.shortName ?? 'FC'}_ultra`, `@${cityName}Til1Die`, `@${cityName.toLowerCase()}_fan${rng.int(7, 99)}`, '@footy_takes', '@TacticsNerd', '@SundayLeagueLegend', `@${(c?.nickname ?? 'the_fans').replace(/[^A-Za-z]/g, '')}Faithful`, '@xG_merchant']);
 }
 
-const JOURNALISTS = ['@MarcoRomanoReports', '@TheAthleticEye', '@TransferInsider', '@PressBoxPete', '@CalcioChronicle', '@FootballFocusFM'];
+const JOURNALISTS = ['@MarcoRomanoReports', '@TheTouchlineEye', '@TransferInsider', '@PressBoxPete', '@CalcioChronicle', '@FullTimeFocus'];
 
 export function reactToMatch(state: CareerState, r: MatchReport, rng: Rng): void {
   const u = r.user;
@@ -120,10 +120,10 @@ export function weeklySocial(state: CareerState, rng: Rng): void {
   // followers drift towards what his fame "deserves"
   f.followers = Math.round(f.followers + (target - f.followers) * 0.02 + rng.gauss(0, Math.max(5, f.followers * 0.002)));
   if (f.followers < 50) f.followers = 50;
-  // reputation fades a little when out of the spotlight
-  f.rep.local = clamp(f.rep.local - 0.12, 0, 100);
-  f.rep.national = clamp(f.rep.national - 0.1, 0, 100);
-  f.rep.world = clamp(f.rep.world - 0.06, 0, 100);
+  // reputation needs to be earned again and again: it fades towards zero when out of the spotlight
+  f.rep.local = clamp(f.rep.local * 0.99 - 0.05, 0, 100);
+  f.rep.national = clamp(f.rep.national * 0.988 - 0.04, 0, 100);
+  f.rep.world = clamp(f.rep.world * 0.99 - 0.03, 0, 100);
   if (rng.chance(0.25)) sponsorOffer(state, rng);
 }
 
@@ -131,7 +131,7 @@ export function sponsorValue(state: CareerState, tier: number): number {
   const f = state.user;
   const fame = Math.max(f.rep.national, f.rep.world * 1.2, f.rep.local * 0.5);
   const followersBoost = Math.log10(Math.max(100, f.followers)) - 2;
-  return roundMoney(Math.max(150, (60 + Math.pow(fame, 2.1) * 3) * (0.6 + tier * 0.45) * (0.7 + followersBoost * 0.25)));
+  return roundMoney(Math.max(150, (40 + Math.pow(fame, 1.9) * 1.6) * (0.5 + tier * 0.4) * (0.7 + followersBoost * 0.2)));
 }
 
 export function sponsorOffer(state: CareerState, rng: Rng): void {

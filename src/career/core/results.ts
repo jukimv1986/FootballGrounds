@@ -251,6 +251,7 @@ export function applyUserMatch(state: CareerState, ctx: UserMatchContext, out: M
   user.morale = clamp(user.morale + dm, 0, 100);
   state.life.happiness.football = clamp(state.life.happiness.football + dm * 0.8, 0, 100);
   if (type !== 'friendly' && !f.youth && !f.national && user.banned > 0 && !played) user.banned = Math.max(0, user.banned - 1);
+  if (ctx.role === 'out' && !f.youth && !f.national) state.events.flags.droppedToYouth = state.day;
 
   refreshMarketValue(state);
   const report = buildReport(state, ctx, out, played3D);
@@ -339,8 +340,18 @@ export function playDayFixtures(state: CareerState, day: number, rng: Rng, excep
 export function isUserFixture(state: CareerState, f: Fixture): boolean {
   const u = state.user;
   if (f.national) return state.nationalTeams.some((n) => (n.id === f.home || n.id === f.away) && n.nation === u.nat && n.level === u.national);
-  if (f.youth) return (f.home === u.clubId || f.away === u.clubId) && u.squad === 'youth';
+  if (f.youth) return (f.home === u.clubId || f.away === u.clubId) && userInYouthSide(state, f.day);
   return f.home === u.clubId || f.away === u.clubId;
+}
+
+/**
+ * The user plays development-squad football when he belongs to the youth squad, or when a young
+ * first-team player was left out of the senior matchday squad that weekend.
+ */
+export function userInYouthSide(state: CareerState, day: number): boolean {
+  const u = state.user;
+  if (u.squad === 'youth') return true;
+  return userAge(state) < 21.5 && (state.events.flags.droppedToYouth ?? -99) >= day - 3;
 }
 
 export function userClubResults(state: CareerState, compId: string): Fixture[] {

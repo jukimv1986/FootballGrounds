@@ -300,6 +300,7 @@ class MatchSession {
         const team = match.GetTeam(teamID) as unknown as TeamLike;
         if (team.SetLockedHumanPlayer) team.SetLockedHumanPlayer(player.GetID());
         else console.warn('MatchSession: Team.SetLockedHumanPlayer is not available');
+        (match as unknown as Match).SetCameraFocusPlayer?.(player);
         return;
       }
     }

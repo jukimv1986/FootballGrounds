@@ -255,6 +255,8 @@ export class Match {
   protected possessionSideHistory = new ValueHistory(6000);
 
   protected autoUpdateIngameCamera = true;
+  /** CAREER: "be a pro" matches keep the user's player in the TV camera's view */
+  protected cameraFocusPlayer: Player | null = null;
 
   // camera
   protected cameraOrientation = Quaternion.IDENTITY;
@@ -1040,6 +1042,15 @@ export class Match {
     this.cameraUserAngleFactor = angleFactor;
   }
 
+  /** CAREER: keep this player in the TV camera's view (null = original camera behaviour) */
+  SetCameraFocusPlayer(player: Player | null): void {
+    this.cameraFocusPlayer = player;
+  }
+
+  GetCameraFocusPlayer(): Player | null {
+    return this.cameraFocusPlayer;
+  }
+
   UpdateIngameCamera(): void {
     // camera
 
@@ -1059,6 +1070,10 @@ export class Match {
         0,
       ),
     );
+
+    // CAREER: bias the camera target towards the focus player so he stays in shot
+    const focus = this.cameraFocusPlayer;
+    if (focus && focus.IsActive()) ballPos = ballPos.Mul(0.55).Add(focus.GetPosition().Mul(0.45));
 
     ballPos = ballPos.WithCoord(2, ballPos.coords[2] * 0.1);
 

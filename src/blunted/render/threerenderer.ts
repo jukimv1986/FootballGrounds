@@ -25,6 +25,7 @@ import { e_ObjectType } from '../scene/spatial';
 import { DetectQuality, QUALITY_PRESETS, type QualitySettings, type RenderQuality } from './quality';
 import { GeometryBuffers } from './rendergeometry';
 import { MaterialLibrary, type MaterialEntry } from './rendermaterials';
+import { ShadowCasters, type StaticCaster } from './shadowcasters';
 import { InstallCustomToneMapping, SKY_FRAGMENT, SKY_VERTEX } from './shaders';
 
 export type { RenderQuality } from './quality';
@@ -36,7 +37,7 @@ export interface ThreeRendererOptions {
   /** default 'aces' */
   toneMapping?: ToneMappingMode;
   exposure?: number;
-  /** fog amount multiplier, 1 = original (max 25% fog) */
+  /** fog amount multiplier, 1 = original (max 25% fog); default 0.6 */
   fog?: number;
   /** extra render resolution scale on top of the (quality-capped) device pixel ratio */
   renderScale?: number;
@@ -47,6 +48,8 @@ export interface ThreeRendererOptions {
 export interface RenderStats {
   /** draw calls of the last frame, shadow pass included */
   drawCalls: number;
+  /** of which in the shadow pass */
+  shadowDrawCalls: number;
   triangles: number;
   /** CPU time spent in Render() (scene sync + command submission), ms */
   frameTimeMs: number;
@@ -76,6 +79,8 @@ const SHADOW_RECEIVER_HEIGHT = 2.6;
 // casters up to this far towards the sun from the receivers (stands, roofs) are rendered into the map
 const SHADOW_CASTER_RANGE = 140;
 const SHADOW_LIGHT_DISTANCE = 400;
+// unchanged static geometry is merged into the shadow batch after this many frames
+const STATIC_CASTER_FRAMES = 30;
 
 interface GeometryEntry {
   geom: Geometry;
@@ -88,7 +93,17 @@ interface GeometryEntry {
   partitionVersion: number;
   /** material per triangle mesh (from the object's material snapshot) */
   materials: MaterialEntry[];
+  /** no draw group uses an alpha-tested material */
+  allOpaque: boolean;
   seen: number;
+  /** frames without transform / geometry / material / visibility changes */
+  stableFrames: number;
+  wasVisible: boolean;
+  /** member of the static shadow batch */
+  staticCaster: StaticCaster | null;
+  /** single-draw shadow proxy (multi-material dynamic meshes) */
+  proxy: THREE.Mesh | null;
+  proxyPartition: number;
 }
 
 interface LightEntry {
@@ -103,6 +118,7 @@ interface LightEntry {
 export class ThreeRenderer {
   readonly stats: RenderStats = {
     drawCalls: 0,
+    shadowDrawCalls: 0,
     triangles: 0,
     frameTimeMs: 0,
     syncTimeMs: 0,
@@ -130,7 +146,10 @@ export class ThreeRenderer {
     sunColor: { value: THREE.Color };
   };
   private readonly library: MaterialLibrary;
+  private readonly shadowCasters = new ShadowCasters();
   private readonly emptyGeometry = new THREE.BufferGeometry();
+  private shadowPassCallsStart = -1;
+  private mainPassCallsStart = -1;
 
   private quality: RenderQuality;
   private settings: QualitySettings;
@@ -165,7 +184,8 @@ export class ThreeRenderer {
     this.settings = { ...QUALITY_PRESETS[this.quality] };
     this.antialias = this.settings.antialias;
     this.renderScale = options.renderScale ?? 1;
-    this.fogStrength = options.fog ?? 1;
+    // PORT: the original's fog (up to 25%) washes out the wide/replay cameras; default to 60% of it
+    this.fogStrength = options.fog ?? 0.6;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -221,7 +241,12 @@ export class ThreeRenderer {
     this.sky.renderOrder = -1000;
     this.sky.matrixAutoUpdate = false;
     this.sky.matrixWorldAutoUpdate = false;
+    // first object of the main pass: marks the end of the shadow pass for the stats
+    this.sky.onBeforeRender = (renderer) => {
+      this.mainPassCallsStart = renderer.info.render.calls;
+    };
     this.scene.add(this.sky);
+    this.scene.add(this.shadowCasters.root);
 
     this.Resize();
     if (typeof window !== 'undefined') window.addEventListener('resize', this.onWindowResize);
@@ -328,10 +353,12 @@ export class ThreeRenderer {
     this.shadowLight = null;
     this.Walk(root);
     this.RemoveUnseen();
+    this.shadowCasters.Update();
     const synced = performance.now();
 
     const r = this.renderer;
     r.info.reset();
+    this.shadowPassCallsStart = this.mainPassCallsStart = -1;
     if (camera) {
       this.SetupCamera(camera);
       this.SetupEnvironment();
@@ -342,8 +369,10 @@ export class ThreeRenderer {
       r.clear();
     }
 
+    this.shadowCasters.root.visible = false;
     const s = this.stats;
     s.drawCalls = r.info.render.calls;
+    s.shadowDrawCalls = this.shadowPassCallsStart >= 0 && this.mainPassCallsStart >= this.shadowPassCallsStart ? this.mainPassCallsStart - this.shadowPassCallsStart : 0;
     s.triangles = r.info.render.triangles;
     s.meshes = this.geometryEntries.size;
     s.geometries = this.buffers.size;
@@ -358,6 +387,7 @@ export class ThreeRenderer {
   Clear(): void {
     for (const entry of this.geometryEntries.values()) this.scene.remove(entry.mesh);
     this.geometryEntries.clear();
+    this.shadowCasters.Clear();
     for (const buffers of this.buffers.values()) buffers.Dispose();
     this.buffers.clear();
     for (const entry of this.lightEntries.values()) this.RemoveLight(entry);
@@ -375,6 +405,7 @@ export class ThreeRenderer {
     this.sky.geometry.dispose();
     (this.sky.material as THREE.Material).dispose();
     this.emptyGeometry.dispose();
+    this.shadowCasters.Dispose();
     this.renderer.dispose();
   }
 
@@ -396,7 +427,11 @@ export class ThreeRenderer {
     for (const [geom, entry] of this.geometryEntries) {
       if (entry.seen === this.frame) continue;
       this.scene.remove(entry.mesh);
+      if (entry.staticCaster) this.shadowCasters.Remove(entry.staticCaster);
+      entry.staticCaster = null;
       this.ReleaseBuffers(entry);
+      if (entry.proxy) this.shadowCasters.RemoveProxy(entry.proxy, true);
+      entry.proxy = null;
       this.geometryEntries.delete(geom);
     }
     for (const [light, entry] of this.lightEntries) {
@@ -425,7 +460,13 @@ export class ThreeRenderer {
         materialsVersion: -1,
         partitionVersion: -1,
         materials: [],
+        allOpaque: true,
         seen: 0,
+        stableFrames: 0,
+        wasVisible: false,
+        staticCaster: null,
+        proxy: null,
+        proxyPartition: -1,
       };
       this.geometryEntries.set(geom, entry);
     }
@@ -434,8 +475,10 @@ export class ThreeRenderer {
 
     if (!geom.HasGeometryData()) {
       mesh.visible = false;
+      this.SetShadowMode(entry, false, true);
       return;
     }
+    let changed = false;
 
     const data = geom.GetGeometryData().GetResource();
     if (entry.data !== data) {
@@ -470,6 +513,7 @@ export class ThreeRenderer {
       entry.geometryVersion = geom.geometryVersion;
       entry.materialsVersion = geom.materialsVersion;
       entry.partitionVersion = -1;
+      changed = true;
     }
 
     if (entry.partitionVersion !== buffers.partitionVersion) {
@@ -477,9 +521,15 @@ export class ThreeRenderer {
       mesh.geometry = buffers.geometry;
       const first = buffers.groupFirstMesh;
       const materials: THREE.Material[] = new Array(first.length);
-      for (let g = 0; g < first.length; g++) materials[g] = (entry.materials[first[g]] ?? this.library.GetMaterial(null)).material;
+      let allOpaque = true;
+      for (let g = 0; g < first.length; g++) {
+        materials[g] = (entry.materials[first[g]] ?? this.library.GetMaterial(null)).material;
+        if (materials[g].alphaTest > 0) allOpaque = false;
+      }
       mesh.material = materials;
+      entry.allOpaque = allOpaque;
       entry.partitionVersion = buffers.partitionVersion;
+      changed = true;
     }
 
     if (geom.transformVersion !== entry.transformVersion) {
@@ -492,10 +542,50 @@ export class ThreeRenderer {
       this.tmpScale.set(s[0], s[1], s[2]);
       mesh.matrixWorld.compose(this.tmpVec, this.tmpQuat, this.tmpScale);
       mesh.matrix.copy(mesh.matrixWorld);
+      if (entry.proxy) entry.proxy.matrixWorld.copy(mesh.matrixWorld);
+      changed = true;
     }
 
-    mesh.visible = geom.IsEnabled() && buffers.vertexCount > 0;
-    mesh.castShadow = this.settings.shadows && (this.settings.staticShadows || buffers.dynamic || buffers.radius < 10);
+    const visible = geom.IsEnabled() && buffers.vertexCount > 0;
+    if (visible !== entry.wasVisible) changed = true;
+    entry.wasVisible = visible;
+    mesh.visible = visible;
+    entry.stableFrames = changed ? 0 : entry.stableFrames + 1;
+    const castShadow = this.settings.shadows && visible && (this.settings.staticShadows || buffers.dynamic || buffers.radius < 10);
+    this.SetShadowMode(entry, castShadow, changed);
+  }
+
+  /** decides how an object casts: through the static batch, a single-draw proxy, or itself */
+  private SetShadowMode(entry: GeometryEntry, castShadow: boolean, changed: boolean): void {
+    const buffers = entry.buffers;
+    const mesh = entry.mesh;
+    const staticEligible =
+      castShadow && buffers !== null && !buffers.dynamic && buffers.users === 1 && buffers.radius >= 6 && entry.stableFrames >= STATIC_CASTER_FRAMES;
+    if (entry.staticCaster && (changed || !staticEligible)) {
+      this.shadowCasters.Remove(entry.staticCaster);
+      entry.staticCaster = null;
+    }
+    if (!entry.staticCaster && staticEligible) {
+      entry.staticCaster = { buffers: buffers!, matrixWorld: mesh.matrixWorld.clone(), groupMaterials: (mesh.material as THREE.Material[]).slice() };
+      this.shadowCasters.Add(entry.staticCaster);
+    }
+    const useProxy = castShadow && !entry.staticCaster && buffers !== null && entry.allOpaque && buffers.geometry.groups.length > 1;
+    if (useProxy) {
+      if (!entry.proxy) {
+        entry.proxy = this.shadowCasters.CreateProxy();
+        entry.proxy.name = mesh.name + ' (shadow)';
+        entry.proxyPartition = -1;
+        entry.proxy.matrixWorld.copy(mesh.matrixWorld);
+      }
+      if (entry.proxyPartition !== buffers!.partitionVersion) {
+        this.shadowCasters.SetProxySource(entry.proxy, buffers!.geometry);
+        entry.proxyPartition = buffers!.partitionVersion;
+      }
+      entry.proxy.visible = true;
+    } else if (entry.proxy) {
+      entry.proxy.visible = false;
+    }
+    mesh.castShadow = castShadow && !entry.staticCaster && !useProxy;
   }
 
   private ResolveMaterials(geom: Geometry, data: GeometryData, entry: GeometryEntry): void {
@@ -533,6 +623,13 @@ export class ThreeRenderer {
         const dl = new THREE.DirectionalLight(0xffffff, LIGHT_BRIGHTNESS);
         dl.shadow.camera.up.set(0, 0, 1);
         this.ConfigureShadow(dl);
+        // runs right before WebGLShadowMap traverses the scene (after the main render list was built)
+        const updateMatrices = dl.shadow.updateMatrices.bind(dl.shadow);
+        dl.shadow.updateMatrices = (light: THREE.Light) => {
+          this.shadowCasters.root.visible = true;
+          if (this.shadowPassCallsStart < 0) this.shadowPassCallsStart = this.renderer.info.render.calls;
+          updateMatrices(light);
+        };
         three = dl;
       } else {
         three = new THREE.PointLight(0xffffff, LIGHT_BRIGHTNESS, 0, 0);

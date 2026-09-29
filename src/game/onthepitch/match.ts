@@ -53,7 +53,6 @@ import {
   GetSmallDebugCircle2,
   GetYellowDebugPilon,
   SuperDebug,
-  Verbose,
   type TaskSequenceInfo,
 } from '../globals';
 import type { IHIDevice } from '../hid/ihidevice';

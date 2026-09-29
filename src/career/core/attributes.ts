@@ -251,6 +251,18 @@ const OVR_CURVE: [number, number][] = [
   [1.2, 99],
 ];
 
+/** inverse of ovrScale: the mean ability that yields a rating */
+export function abilityForOvr(ovr: number): number {
+  for (let i = 1; i < OVR_CURVE.length; i++) {
+    const [a1, o1] = OVR_CURVE[i];
+    if (ovr <= o1) {
+      const [a0, o0] = OVR_CURVE[i - 1];
+      return a0 + ((a1 - a0) * (ovr - o0)) / Math.max(1e-9, o1 - o0);
+    }
+  }
+  return 1.2;
+}
+
 /** normalised ability (mean-stat equivalent) -> 0..99 rating */
 export function ovrScale(normalizedAbility: number): number {
   return clamp(interpolate(OVR_CURVE, normalizedAbility), 1, 99);

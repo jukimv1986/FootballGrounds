@@ -431,7 +431,7 @@ export function initNav(): void {
   initialized = true;
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('pointermove', onPointerMove, { passive: true });
-  window.addEventListener('pointerdown', (e) => setInputMode(e.pointerType === 'mouse' ? 'pointer' : 'pointer'), { passive: true });
+  window.addEventListener('pointerdown', () => setInputMode('pointer'), { passive: true });
   window.addEventListener('gamepadconnected', () => startPolling());
   // pads connected before the page loaded show up on the first poll after a button press
   if (typeof navigator.getGamepads === 'function' && Array.from(navigator.getGamepads()).some((p) => p)) startPolling();

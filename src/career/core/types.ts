@@ -440,7 +440,12 @@ export type WeekPlan = (ActivityKey | null)[][];
 
 export interface Life {
   cityId: Id;
+  /** where his family lives */
+  hometown: Id;
   district: number;
+  school: { attended: number; missed: number; graduated: boolean };
+  /** overnight recovery multiplier set by the evening's activity */
+  sleepMult: number;
   housing: { kind: HousingKind; owned: boolean; weekly: number; since: number };
   properties: Property[];
   transport: TransportKind;

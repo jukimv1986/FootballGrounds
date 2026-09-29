@@ -64,8 +64,10 @@ export class ShadowCasters {
     old.dispose();
   }
 
-  RemoveProxy(proxy: THREE.Mesh): void {
+  /** `disposeGeometry` only when the source geometry is gone already (see SetProxySource) */
+  RemoveProxy(proxy: THREE.Mesh, disposeGeometry: boolean): void {
     this.root.remove(proxy);
+    if (disposeGeometry) proxy.geometry.dispose();
   }
 
   // ----- static batches

@@ -106,7 +106,8 @@ export type VenueKey =
   | 'beach'
   | 'stadium'
   | 'golf'
-  | 'culture';
+  | 'culture'
+  | 'family';
 
 export interface VenueDef {
   key: VenueKey;
@@ -135,6 +136,7 @@ export const VENUES: VenueDef[] = [
   { key: 'stadium', name: 'Stadium', desc: 'Fan events and watching other games.', glyph: '◎' },
   { key: 'golf', name: 'Golf Club', desc: 'Eighteen holes with teammates.', minSize: 0.3, glyph: '⛳' },
   { key: 'culture', name: 'Cinema & Culture', desc: 'Films, museums and concerts.', minSize: 0.2, glyph: '✧' },
+  { key: 'family', name: 'Family', desc: 'Your parents\' place — or a trip back home.', glyph: '❦' },
 ];
 
 export type TrainingKey =
@@ -209,7 +211,7 @@ export interface ActivityDef {
     | 'fan_event'
     | 'shopping';
   /** requirement tag checked in life.ts */
-  requires?: 'injured' | 'fit' | 'partner' | 'dating' | 'agent' | 'enrolled' | 'student' | 'house' | 'fame' | 'sponsor' | 'adult' | 'hobby';
+  requires?: 'injured' | 'fit' | 'partner' | 'dating' | 'agent' | 'enrolled' | 'student' | 'house' | 'fame' | 'sponsor' | 'adult' | 'hobby' | 'hometown' | 'away';
 }
 
 export const ACTIVITIES: ActivityDef[] = [
@@ -225,6 +227,10 @@ export const ACTIVITIES: ActivityDef[] = [
   { key: 'hobby', name: 'Practise your hobby', venue: 'home', desc: 'Guitar, chess, painting — whatever keeps you sane.', slots: [1, 2], cost: 5, effects: { energy: 2, morale: 2, relax: 10 }, special: 'hobby', requires: 'hobby' },
   { key: 'host_party', name: 'Host a party', venue: 'home', desc: 'Your place, your playlist, your neighbours\' complaints.', slots: [2], cost: 400, effects: { energy: 18, social: 12, morale: 4, professionalism: -1.5, sleepPenalty: 0.75, teammates: 3, followers: 0.002 }, special: 'party', requires: 'house' },
   { key: 'partner_night', name: 'Quiet night with your partner', venue: 'home', desc: 'Dinner, a series and each other.', slots: [2], cost: 20, effects: { energy: -6, romance: 8, morale: 2, relax: 8 }, special: 'partner_time', requires: 'partner' },
+
+  // family
+  { key: 'visit_family', name: 'Visit your family', venue: 'family', desc: 'Dinner at your parents\' place.', slots: [1, 2], cost: 20, effects: { energy: 2, family: 14, morale: 3, relax: 10 }, special: 'visit_family', requires: 'hometown' },
+  { key: 'trip_home', name: 'Trip back home', venue: 'family', desc: 'Train or flight home for a few hours with family and old friends.', slots: [1], cost: 180, effects: { energy: 14, family: 18, social: 6, morale: 4, relax: 12 }, special: 'visit_family', requires: 'away' },
 
   // training ground
   { key: 'extra_training', name: 'Extra training session', venue: 'training', desc: 'Choose a focus and put in the work.', slots: [1], cost: 0, effects: {}, special: 'extra_training', requires: 'fit' },
@@ -265,7 +271,9 @@ export const ACTIVITIES: ActivityDef[] = [
   { key: 'school', name: 'Attend school', venue: 'school', desc: 'Maths, languages and a teacher who supports the rivals.', slots: [1], cost: 0, effects: { energy: 8, professionalism: 0.3, family: 1 }, special: 'school', requires: 'student' },
   { key: 'study', name: 'Study your course', venue: 'school', desc: 'Lectures and assignments for your enrolled course.', slots: [1, 2], cost: 25, effects: { energy: 7 }, special: 'study', requires: 'enrolled' },
 
-  // agent
+  // agent / media
+  { key: 'sponsor_duty', name: 'Sponsor appearance', venue: 'agent', desc: 'Photo shoot or launch event for your sponsor.', slots: [1, 2], cost: 0, effects: { energy: 9, followers: 0.003 }, special: 'sponsor', requires: 'sponsor' },
+  { key: 'podcast', name: 'Guest on a podcast', venue: 'agent', desc: 'An hour of chat about football and life.', slots: [1, 2], cost: 0, effects: { energy: 5, followers: 0.004, repLocal: 0.4 }, requires: 'fame' },
   { key: 'meet_agent', name: 'Meet your agent', venue: 'agent', desc: 'Talk contracts, clubs and sponsors.', slots: [1], cost: 0, effects: { energy: 3 }, special: 'agent', requires: 'agent' },
 
   // clinic

@@ -4,7 +4,7 @@
 // URL parameters:
 //   quality=low|medium|high   renderer quality (default high)
 //   view=tv|close|goal|overview|low   camera (default tv = Match::UpdateIngameCamera "wide cam")
-//   tonemap=aces|agx|neutral|original
+//   tonemap=aces|agx|neutral|original, exposure=1, fog=0.6 (1 = original amount)
 //   split=0                   don't split the stadium into 24 m chunks (the match does)
 //   anim=0                    no per-frame vertex animation of the player bodies
 //   hud=0                     hide the stats overlay
@@ -43,6 +43,8 @@ interface Body {
   geom: Geometry;
   hair: Geometry;
   base: Vector3;
+  /** hair offset from the body origin (the neck), unrotated */
+  hairOffset: Vector3;
   facing: number;
   rest: Float32Array[];
   phase: number;
@@ -299,11 +301,24 @@ async function Main(): Promise<void> {
       }
     }
     hair.OnUpdateGeometryData();
-    hair.SetPosition(new Vector3(0, -0.03, 1.5));
+    // the hairstyle's origin is the neck: put it below the top of the head, centred on the head
+    let hx0 = Infinity, hx1 = -Infinity, hy0 = Infinity, hy1 = -Infinity, top = 0;
+    for (const mesh of data.GetTriangleMeshesRef()) {
+      const v = mesh.vertices;
+      for (let k = 0; k < mesh.verticesDataSize / 5; k += 3) {
+        if (v[k + 2] < 1.6) continue;
+        hx0 = Math.min(hx0, v[k]);
+        hx1 = Math.max(hx1, v[k]);
+        hy0 = Math.min(hy0, v[k + 1]);
+        hy1 = Math.max(hy1, v[k + 1]);
+        top = Math.max(top, v[k + 2]);
+      }
+    }
+    const hairOffset = hx0 === Infinity ? new Vector3(0, 0, 1.5) : new Vector3((hx0 + hx1) * 0.5, (hy0 + hy1) * 0.5, top - 0.3);
     node.AddObject(hair);
     scene.AddNode(node);
     const rest = data.GetTriangleMeshesRef().map((m) => new Float32Array(m.vertices));
-    bodies.push({ node, geom, hair, base: new Vector3(x, y, 0), facing, rest, phase: index * 0.7 });
+    bodies.push({ node, geom, hair, base: new Vector3(x, y, 0), hairOffset, facing, rest, phase: index * 0.7 });
   };
   const maxPlayers = Number(params.get('players') ?? 22);
   let index = 0;
@@ -369,6 +384,8 @@ async function Main(): Promise<void> {
   const renderer = new ThreeRenderer(canvas, {
     quality,
     toneMapping: (params.get('tonemap') as ToneMappingMode | null) ?? undefined,
+    fog: params.has('fog') ? Number(params.get('fog')) : undefined,
+    exposure: params.has('exposure') ? Number(params.get('exposure')) : undefined,
   });
   const buildMs = performance.now() - buildStart;
 
@@ -400,12 +417,15 @@ async function Main(): Promise<void> {
       body.geom.OnUpdateGeometryData(false);
       const run = new Vector3(Math.cos(t * 0.4 + body.phase), Math.sin(t * 0.3 + body.phase), 0).Mul(1.5);
       body.node.SetPosition(body.base.Add(run));
-      body.hair.SetRotation(Quaternion.FromAngleAxis(angle, new Vector3(0, 0, 1)));
+      const hairRotation = Quaternion.FromAngleAxis(angle, new Vector3(0, 0, 1));
+      body.hair.SetRotation(hairRotation);
+      body.hair.SetPosition(body.hairOffset.GetRotated(hairRotation));
     }
     ball.SetPosition(new Vector3(-1.2 + Math.sin(t * 0.7) * 3, 0.8 + Math.cos(t * 0.5) * 2, 0.11 + Math.abs(Math.sin(t * 1.5)) * 1.5));
     animMs = performance.now() - s0;
   };
 
+  Animate(0);
   const start = performance.now();
   let t = 0;
   let lastHud = 0;

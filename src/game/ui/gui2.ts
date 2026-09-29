@@ -51,6 +51,9 @@ export class Gui2WindowManager {
   Clear(): void {
     this.root.RemoveAllChildren();
     if (this.container) this.container.innerHTML = '';
+    // keep the (persistent) root attached for the next match
+    const rootElement = this.root.GetElement();
+    if (this.container && rootElement) this.container.appendChild(rootElement);
   }
 }
 

@@ -22,6 +22,11 @@
   --font: 'Alegreya Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-display: 'Alegreya Sans SC', 'Alegreya Sans', 'Segoe UI', system-ui, sans-serif;
   --gap: 12px;
+  /* added by the menus: body copy (the Alegreya files are the heavy weights only), page gutter, easing */
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --gutter: clamp(16px, 3.2vw, 44px);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent), 0 0 22px rgba(61, 220, 132, 0.35);
   color-scheme: dark;
 }
 

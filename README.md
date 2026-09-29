@@ -1,135 +1,104 @@
-## Gameplay Football
-Football game, a fork of discontinued [GameplayFootball](https://github.com/BazkieBumpercar/GameplayFootball) written by [Bastiaan Konings Schuiling](http://www.properlydecent.com/).
+# Football Career
 
-In 2019, Google Brain team picked up a game and created a Reinforcement Learning environment based on it - [Google Research Football](https://github.com/google-research/football). They made some improvements to the game, updated the libraries, but threw away everything (e.g. menus, audio effects, etc.) that was not necessary for their task.
+A football career game for the browser: play a footballer's life from academy youngster to
+retirement, on and off the pitch. Matches are played in 3D on top of a TypeScript port of the
+match engine of [GameplayFootball](https://github.com/BazkieBumpercar/GameplayFootball) by
+[Bastiaan Konings Schuiling](http://www.properlydecent.com/) (also the base of
+[Google Research Football](https://github.com/google-research/football)).
 
-The goal of this repository is to update the existing code, based on Google Brain's changes (see `google_brain` branch) and other forks, and make it compiling and running on as many platforms as possible. PRs are always welcome.  
+The game is HTML5 (TypeScript + [Three.js](https://threejs.org/), built with [Vite](https://vite.dev/)),
+so it runs on desktop and mobile browsers without installing anything, and can be wrapped for
+app stores later (Tauri/Electron/Capacitor).
 
-## Building from source
-
-### Linux
-Install required dependencies: 
-```bash
-sudo apt-get install git cmake build-essential libgl1-mesa-dev libsdl2-dev \
-libsdl2-image-dev libsdl2-ttf-dev libsdl2-gfx-dev libopenal-dev libboost-all-dev \
-libdirectfb-dev libst-dev mesa-utils xvfb x11vnc libsqlite3-dev
-```
-
-Run the following commands:
-```bash
-# Clone the repository
-git clone https://github.com/vi3itor/GameplayFootball.git
-cd GameplayFootball
-
-# Copy the contents of `data` directory into `build`
-cp -R data/. build
-
-# Go to `build` directory
-cd build
-# Generate Makefile
-cmake ..
-# Compile the game
-make -j$(nproc)
-```
-
-Run the game:
-```bash
-./gameplayfootball
-```
-
-### MacOS (Work in Progress)
-**Important**: Currently, the game can be compiled on Mac OS, but it is not running yet, because rendering must be done on the Main Thread.
-
-To install required dependencies you need [`brew`](https://brew.sh/) which can be installed in Terminal by running:
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
-```
+## Playing
 
 ```bash
-# Install dependencies
-brew install git cmake sdl2 sdl2_image sdl2_ttf sdl2_gfx boost openal-soft
-# Navigate to the directory where you want to put the repository
-cd ~
-# Clone the repository
-git clone https://github.com/vi3itor/GameplayFootball.git
-cd GameplayFootball
-# Copy the contents of `data` directory into `build`
-cp -R data/. build
-
-# Go to `build` directory
-cd build
-# Generate Makefile
-cmake ..
-# Compile the game
-make -j$(nproc)
-
-# Run the game (Currently is not working)
-./gameplayfootball
+npm install
+npm run dev          # http://localhost:5173
 ```
 
+- **Career**: create your footballer and live his career (see below).
+- **Quick match**: pick two clubs, kits and controllers and play a match.
+- **Settings**: graphics quality, audio, camera, gameplay and key bindings.
 
+Controls (keyboard, rebindable): arrows move · S short pass · W through pass · A high pass/cross ·
+D shot · E sprint · C dribble · Q switch player · Esc pause. Without the ball: S pressure,
+A sliding tackle, W keeper rush, D team pressure. Gamepads (standard mapping) and on-screen touch
+controls are supported.
 
-### Windows (Work in Progress)
+## Career mode
 
-Download and install:
-- [Visual Studio 2019](https://visualstudio.microsoft.com/downloads/),
-- [Git](https://git-scm.com/download/win),
-- [CMake](https://cmake.org/download/) (make sure to add it to the system PATH).
+You start at 15–16 in a club's youth academy in the city you choose and play until you retire:
 
-Install [`vcpkg`](https://github.com/microsoft/vcpkg) as explained in [Quick Start Guide](https://github.com/microsoft/vcpkg#quick-start-windows) or simply:
-create a directory, e.g. `C:\dev`, open Command Prompt and run the following commands: 
-```bat
-% Navigate to the created directory
-cd C:\dev
+- **Football**: training sessions (fitness, technique, tactics, recovery…) that develop your
+  22 attributes along a realistic age curve, squad selection by the coach, league and cup
+  seasons, contracts, transfers and loans, injuries, national team call-ups.
+- **Matches**: play them yourself in 3D ("be a pro": you control only your player and the camera
+  keeps you in view) or simulate them; your rating and stats feed your form, reputation and
+  market value.
+- **Life outside the pitch**: living in a city (housing, transport, lifestyle), money,
+  family, friends, relationships, agent, media and social media, sponsors, education and
+  narrative events with choices.
+- **Retirement**: a legacy summary of the whole career and a hall of fame.
 
-% Clone vckpg
-git clone https://github.com/microsoft/vcpkg
+Careers are saved in the browser (several slots, export/import).
 
-% Run installation script
-.\vcpkg\bootstrap-vcpkg.bat
+## Project layout
+
 ```
-Install required dependencies (all triplets **must be `x86-windows`**):
-```bat 
-.\vcpkg.exe install --triplet x86-windows boost:x86-windows sdl2 sdl2-image[libjpeg-turbo] sdl2-ttf sdl2-gfx opengl openal-soft
-```
-
-```bat
-% Navigate to the directory where you want to put the repository
-cd C:\dev
-
-% Clone repository
-git clone https://github.com/vi3itor/GameplayFootball.git 
-cd GameplayFootball
-
-% Switch to windows branch
-git switch windows
-
-
-% Copy the contents of `data` directory into `build\Debug` or (and) `build\Release`
-xcopy /e /i data build\Debug
-xcopy /e /i data build\Release
-```
-Go to `build` directory and generate `cmake` files. Make sure that you correctly set the directory for `vcpkg` (in our case it is installed into `C:\dev\vcpkg`):
-```bat
-cd build
-
-cmake .. -DCMAKE_GENERATOR_PLATFORM=Win32 -DCMAKE_TOOLCHAIN_FILE=C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=TRUE  
-```
-To build `Release` version:
-```bat
-cmake --build . --parallel --config Release
-```
-For `Debug` version:
-```bat
-cmake --build . --parallel --config Debug
+src/
+  blunted/     engine layer (port of the original "Blunted2" engine): math, scene graph,
+               resource loading (.ase models, .object scenes), Three.js renderer, Web Audio
+  game/        port of the GameplayFootball game code: match, ball, teams, AI, players,
+               humanoid animation system, referee, data (teams/players), input devices
+  app/         match sessions (asset loading, running a match, stats and ratings), boot
+  ui/          menus and in-match overlays (plain TypeScript + DOM + CSS)
+  career/      career mode: world, simulation, life systems, screens
+public/data/   the original game data (animations, models, textures, sounds, fonts, database)
+legacy/        the original C++ sources, kept for reference while the port evolves
+docs/          PORTING.md: conventions used to port the C++ code
+tests/         vitest unit and simulation tests
 ```
 
-That's it! Run `gameplayfootball.exe` inside `build\Release` directory (or inside `build\Debug` for `Debug` version)
+The C++ → TypeScript port is deliberately faithful: class, method and member names match the
+original so any TypeScript file can be compared side by side with its `legacy/src` counterpart.
+See [docs/PORTING.md](docs/PORTING.md) for the conventions.
 
+## Scripts
 
-## Problems? 
-If you have any problems please open an issue. 
+| Command | What it does |
+|---|---|
+| `npm run dev` | dev server with hot reload |
+| `npm run build` | typecheck + production build into `dist/` (static files, host anywhere) |
+| `npm run preview` | serve the production build |
+| `npm test` | unit and simulation tests (vitest) |
+| `npm run typecheck` | TypeScript check |
+| `npm run assets` | regenerate `public/data/manifest.json` and the JSON database after changing data files |
 
+`render-test.html` is a standalone renderer test scene (stadium, players, ball) with camera
+presets (`?view=tv|close|goal|overview`).
 
-### Donate
-If you want to thank Bastiaan for his great work, consider a donation to his Bitcoin address 1JHnTe2QQj8RL281fXFiyvK9igj2VhPh2t
+## Data and modding
+
+Teams and players come from `public/data/databases/default/database.json`, generated from the
+original `database.sqlite` by `scripts/convert-database.py`; see
+`public/data/databases/modding.txt` for how player stats work. After adding or changing files
+under `public/data`, run `npm run assets` so the game's asset manifest is up to date.
+
+## Deployment
+
+The build is a static site. `.github/workflows/ci.yml` typechecks, tests and builds every push
+and deploys the default branch to GitHub Pages (enable it once under
+*Settings → Pages → Source: GitHub Actions*).
+
+## Credits
+
+- GameplayFootball: Bastiaan Konings Schuiling (2008–2015), released as public domain.
+- Google Research Football changes: Google Brain team (Apache 2.0).
+- Cross-platform fork of the C++ game: [vi3itor/GameplayFootball](https://github.com/vi3itor/GameplayFootball)
+  and contributors.
+
+Licensed under the Apache License 2.0 (see [LICENSE](LICENSE)).
+
+If you want to thank Bastiaan for his great work, consider a donation to his Bitcoin address
+1JHnTe2QQj8RL281fXFiyvK9igj2VhPh2t

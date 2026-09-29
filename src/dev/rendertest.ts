@@ -60,6 +60,8 @@ interface TestApi {
   setToneMapping: (m: ToneMappingMode) => void;
   setAnimate: (on: boolean) => void;
   benchmark: (frames: number) => Promise<unknown>;
+  /** exercises runtime paths (quality switch, Clear, texture updates, node removal); resolves with a log */
+  selfTest: () => Promise<string[]>;
 }
 
 const api: TestApi = {
@@ -72,6 +74,7 @@ const api: TestApi = {
   setToneMapping: () => {},
   setAnimate: () => {},
   benchmark: async () => null,
+  selfTest: async () => [],
 };
 (window as unknown as { __renderTest: TestApi }).__renderTest = api;
 
@@ -484,6 +487,59 @@ async function Main(): Promise<void> {
     new Promise((resolve) => {
       benchmarkState = { remaining: frames, frames: 0, frameMs: 0, syncMs: 0, animMs: 0, start: performance.now(), calls: 0, tris: 0, resolve };
     });
+
+  api.selfTest = async () => {
+    const log: string[] = [];
+    const note = (what: string): void => {
+      const st = renderer.stats;
+      log.push(`${what}: meshes ${st.meshes} geometries ${st.geometries} materials ${st.materials} textures ${st.textures} calls ${st.drawCalls} (shadow ${st.shadowDrawCalls})`);
+    };
+    await waitFrames(40);
+    note('baseline');
+    renderer.SetQuality('low');
+    await waitFrames(3);
+    note('quality low');
+    renderer.SetQuality('high');
+    await waitFrames(3);
+    note('quality high');
+    // kit pixels change in place (same Surface, new version) -> DataTexture re-upload
+    const kitSurface = kits[1].GetResource();
+    const kp = kitSurface.EnsurePixels();
+    for (let i = 0; i < kp.length; i += 4) {
+      kp[i] = Math.min(255, kp[i] * 0.3 + 20);
+      kp[i + 1] = Math.min(255, kp[i + 1] * 0.5 + 40);
+      kp[i + 2] = Math.min(255, kp[i + 2] * 0.9 + 120);
+    }
+    kitSurface.MarkDirty();
+    await waitFrames(3);
+    note('away kit recoloured (blue)');
+    for (let i = 0; i < kp.length; i += 4) kp[i + 1] = Math.min(255, kp[i + 1] + 60);
+    kitSurface.MarkDirty();
+    await waitFrames(3);
+    note('away kit updated in place (teal)');
+    // surface replaced behind an existing resource (RegisterSurface), different size
+    const small = Surface.Create(64, 64, [230, 200, 40, 255]);
+    pool.RegisterSurface('referee_kit.png', small);
+    await waitFrames(3);
+    note('referee kit replaced (yellow)');
+    // removing and re-adding a node, disabling an object
+    const removed = bodies[20].node;
+    scene.GetRoot().RemoveNode(removed);
+    bodies[19].geom.Disable();
+    await waitFrames(3);
+    note('one body removed, one disabled');
+    scene.AddNode(removed);
+    bodies[19].geom.Enable();
+    await waitFrames(3);
+    note('restored');
+    renderer.Clear();
+    note('after Clear()');
+    await waitFrames(3);
+    note('rebuilt after Clear()');
+    await waitFrames(40);
+    note('settled');
+    return log;
+  };
 
   requestAnimationFrame(Frame);
   // report ready after a couple of frames (programs compiled, textures uploaded)

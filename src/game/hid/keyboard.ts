@@ -135,6 +135,8 @@ export class HIDKeyboard implements IHIDevice {
       this.previousFunctionButtonState[i] = this.functionButtonState[i];
       this.functionButtonState[i] = events.GetKeyboardState(this.functionMapping[i]);
     }
+    // PORT: SDL delivered key state per 10ms step; browser taps can be shorter than a frame
+    events.ClearLatched();
   }
 
   GetButton(buttonFunction: e_ButtonFunction): boolean {

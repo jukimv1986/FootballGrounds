@@ -27,6 +27,8 @@ export type SDL_Keycode = string;
 export class UserEventManager {
   private static instance: UserEventManager | null = null;
   protected keys = new Set<string>();
+  /** keys pressed since the last ClearLatched(): a tap shorter than one game step still counts once */
+  protected latched = new Set<string>();
   protected attached = false;
 
   static GetInstance(): UserEventManager {
@@ -38,17 +40,32 @@ export class UserEventManager {
   Attach(target: Window = window): void {
     if (this.attached) return;
     this.attached = true;
-    target.addEventListener('keydown', (e) => this.keys.add(e.code));
+    target.addEventListener('keydown', (e) => {
+      this.keys.add(e.code);
+      this.latched.add(e.code);
+    });
     target.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    target.addEventListener('blur', () => this.keys.clear());
+    target.addEventListener('blur', () => {
+      this.keys.clear();
+      this.latched.clear();
+    });
   }
 
+  /** true while the key is held, or if it was tapped since the last ClearLatched() */
   GetKeyboardState(key: SDL_Keycode): boolean {
-    return this.keys.has(key);
+    return this.keys.has(key) || this.latched.has(key);
   }
 
   SetKeyboardState(key: SDL_Keycode, state: boolean): void {
     if (state) this.keys.add(key);
-    else this.keys.delete(key);
+    else {
+      this.keys.delete(key);
+      this.latched.delete(key);
+    }
+  }
+
+  /** called once per game step after the controllers sampled the keyboard */
+  ClearLatched(): void {
+    this.latched.clear();
   }
 }

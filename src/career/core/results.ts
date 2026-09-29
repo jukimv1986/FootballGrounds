@@ -9,7 +9,9 @@ import { conditionFactor, fullName, hasTrait, refreshMarketValue, userAge } from
 import { startUserInjury } from './health';
 import { detailedSim, quickSim, type MatchOutcome, type SimSideInput, type UserSimInput } from './matchsim';
 import { addMessage, addMoney, addNotice, addPost, addTimeline } from './messages';
-import { shortName, virtualPlayers } from './players';
+import { ageCurve, shortName, virtualPlayers } from './players';
+import { ovrScale } from './attributes';
+import { clubLevel } from './world';
 import { Rng, clamp } from './rng';
 import { USER_ID, lineupPlayer, quickLineup, selectLineup, type Lineup } from './selection';
 import { matchExperience } from './training';
@@ -46,7 +48,8 @@ export function lineupsFor(state: CareerState, f: Fixture, rng: Rng): [Lineup, L
 export function virtualYouthLineup(state: CareerState, clubId: number, rng: Rng): Lineup {
   const c = club(state, clubId);
   const r = new Rng(clubId * 977 + state.season * 13);
-  const target = 40 + (c?.youthRating ?? 0.5) * 50;
+  // calibrated like a real development squad: club level x academy quality x the age curve at ~17
+  const target = ovrScale(clubLevel(c?.reputation ?? 50) * (0.92 + (c?.youthFacilities ?? 0.5) * 0.12) * ageCurve(17.2)) + 2;
   const positions = ['GK', 'LB', 'CB', 'CB', 'RB', 'LM', 'CM', 'CM', 'RM', 'CF', 'CF', 'GK', 'CB', 'CM', 'AM', 'CF'] as const;
   const virtual = virtualPlayers(r, { idBase: -1000 - (clubId % 500) * 20, nat: c?.countryKey ?? 'ENG', positions, targetOvr: target, ageMin: 16, ageMax: 18.9, day: state.day });
   const starters = virtual.slice(0, 11).map((n, i) => ({ npcId: n.id, pos: positions[i], rating: n.ovr + rng.gauss(0, 1.5) }));

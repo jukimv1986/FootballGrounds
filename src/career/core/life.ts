@@ -62,7 +62,9 @@ export function initFamily(state: CareerState, rng: Rng): void {
   addPerson(state, { first: rng.pick(pool.first), last, role: 'father', affinity: 76, job: rng.pick(['electrician', 'taxi driver', 'engineer', 'bus driver', 'builder', 'sports teacher']), cityId: state.life.hometown });
   if (rng.chance(0.7)) {
     const sis = rng.chance(0.5);
-    addPerson(state, { first: sis ? rng.pick(pool.female) : rng.pick(pool.first), last, role: 'sibling', affinity: 70, job: sis ? 'little sister' : 'big brother', cityId: state.life.hometown });
+    const taken = new Set([...state.life.people.map((p) => p.first), state.user.first]);
+    const names = (sis ? pool.female : pool.first).filter((n) => !taken.has(n));
+    addPerson(state, { first: rng.pick(names.length ? names : pool.first), last, role: 'sibling', affinity: 70, job: sis ? 'little sister' : 'big brother', cityId: state.life.hometown });
   }
   for (let i = 0; i < 2; i++) {
     const n = randomName(rng, nat);

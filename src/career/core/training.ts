@@ -257,7 +257,8 @@ export function clubSessionFor(state: CareerState, day: number): TrainingKey | n
   const f = state.user;
   const coach = coachOf(state, f.clubId);
   const wd = weekday(day);
-  const mine = (d: number) => fixturesOn(state, d).some((x) => (x.home === f.clubId || x.away === f.clubId) && !x.national && (!x.youth || f.squad === 'youth'));
+  // academy players follow the U19 schedule, first-team players the first team's
+  const mine = (d: number) => fixturesOn(state, d).some((x) => (x.home === f.clubId || x.away === f.clubId) && !x.national && (f.squad === 'youth' ? !!x.youth : !x.youth));
   if (mine(day)) return null;
   if (wd === 6) return null; // Sunday off
   if (mine(day - 1)) return 'recovery';

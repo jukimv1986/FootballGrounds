@@ -299,6 +299,8 @@ export interface SeasonRecord {
   trophies: string[];
   awards: string[];
   loan?: boolean;
+  /** final league table of his league: [club, played, goal difference, points] */
+  table?: [string, number, number, number][];
 }
 
 export interface Trophy {

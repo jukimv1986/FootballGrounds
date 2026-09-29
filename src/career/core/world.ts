@@ -10,7 +10,7 @@
 import type { DatabaseTables } from '../../game/data/database';
 import { parseProfileXml, positionFromRoleString, type Position } from './attributes';
 import { dayOf, seasonOf } from './dates';
-import { COUNTRIES, DB_CLUB_CITY, districtsFor, NATIONS, type CountryDef } from './data/geography';
+import { COUNTRIES, DB_CLUB_CITY, districtsFor, isRealClubName, NATIONS, type CountryDef } from './data/geography';
 import { CLUB_SPONSORS } from './data/lifestyle';
 import { IMPORT_NATIONS, randomName } from './data/names';
 import { SQUAD_TEMPLATE, YOUTH_TEMPLATE, createNpc, emptyLine, expectedWage, refreshNpc } from './players';
@@ -197,7 +197,7 @@ function uniqueClubName(rng: Rng, def: CountryDef, city: string, used: Set<strin
   const patterns = rng.shuffle([...def.clubPatterns]);
   for (const p of patterns) {
     const name = p.replace('{c}', city);
-    if (!used.has(name)) {
+    if (!used.has(name) && !isRealClubName(name)) {
       used.add(name);
       return name;
     }

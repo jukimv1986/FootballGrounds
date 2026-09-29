@@ -223,10 +223,11 @@ function finishOutcome(rng: Rng, home: SimSideInput, away: SimSideInput, sh: Tea
     const exposure = l.mins / 90;
     if (rng.chance(CARD_W[e.pos] * exposure)) {
       l.yellow = 1;
-      events.push({ minute: rng.int(5, 90), type: 'yellow', side: l.side, name: sides[l.side].name(l.id) });
+      const ym = rng.int(5, 84);
+      events.push({ minute: ym, type: 'yellow', side: l.side, name: sides[l.side].name(l.id) });
       if (rng.chance(0.04)) {
         l.red = 1;
-        events.push({ minute: rng.int(60, 90), type: 'red', side: l.side, name: sides[l.side].name(l.id), text: 'second yellow' });
+        events.push({ minute: rng.int(ym + 1, 90), type: 'red', side: l.side, name: sides[l.side].name(l.id), text: 'second yellow' });
       }
     } else if (rng.chance(0.0035 * exposure)) {
       l.red = 1;
@@ -297,7 +298,7 @@ const S = Object.fromEntries(STAT_NAMES.map((n, i) => [n, i])) as Record<(typeof
 
 const TOUCH_RATE: Record<Position, number> = { GK: 0.32, CB: 0.55, LB: 0.6, RB: 0.6, DM: 0.72, CM: 0.78, AM: 0.66, LM: 0.55, RM: 0.55, CF: 0.4 };
 const DRIBBLE_SHARE: Record<Position, number> = { GK: 0, CB: 0.02, LB: 0.06, RB: 0.06, DM: 0.04, CM: 0.07, AM: 0.14, LM: 0.18, RM: 0.18, CF: 0.14 };
-const KEYPASS_RATE: Record<Position, number> = { GK: 0.001, CB: 0.004, LB: 0.018, RB: 0.018, DM: 0.012, CM: 0.025, AM: 0.042, LM: 0.035, RM: 0.035, CF: 0.022 };
+const KEYPASS_RATE: Record<Position, number> = { GK: 0.001, CB: 0.004, LB: 0.016, RB: 0.016, DM: 0.011, CM: 0.022, AM: 0.036, LM: 0.031, RM: 0.031, CF: 0.02 };
 const DEF_RATE: Record<Position, number> = { GK: 0, CB: 0.085, LB: 0.07, RB: 0.07, DM: 0.085, CM: 0.055, AM: 0.025, LM: 0.03, RM: 0.03, CF: 0.015 };
 const CHANCE_INTERVENE: Record<Position, number> = { GK: 0, CB: 0.2, LB: 0.12, RB: 0.12, DM: 0.14, CM: 0.07, AM: 0.03, LM: 0.04, RM: 0.04, CF: 0.02 };
 
@@ -370,7 +371,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
       name: scorerId === null ? u.name : sides[s].name(scorerId),
       assist: assistId === null ? (scorerId === null ? undefined : u.name) : assistId === -99 ? undefined : sides[s].name(assistId),
       user: scorerId === null,
-      text: how,
+      text: how === 'finish' ? undefined : how,
     };
     if (scorerId !== null) ev.npcId = scorerId;
     if (assistId !== null && assistId !== -99) ev.assistId = assistId;
@@ -402,7 +403,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
       shooterId = scorer?.npcId ?? null;
       if (rng.chance(0.72)) {
         const withUser = s === us && onPitch;
-        const wUser = withUser ? ASSIST_W[u.pos] * (0.6 + visionSkill) : 0;
+        const wUser = withUser ? ASSIST_W[u.pos] * (0.3 + visionSkill * 0.55) : 0;
         const others = entries.filter((e) => e.npcId !== shooterId);
         const total = others.reduce((a, e) => a + ASSIST_W[e.pos], 0) + wUser;
         if (withUser && rng.chance(wUser / Math.max(0.01, total))) assistId = null;
@@ -489,7 +490,7 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
             rating += 0.06;
             if (rng.chance(0.14)) {
               if (rng.chance(0.55)) chance(us, minute, 'team', 1.15);
-              else chance(us, minute, 'user', 1.1);
+              else chance(us, minute, 'user', 0.8);
             }
           } else rating -= 0.04;
         } else {
@@ -501,7 +502,8 @@ export function detailedSim(rng: Rng, home: SimSideInput, away: SimSideInput, ko
             if (rng.chance(KEYPASS_RATE[u.pos] * (0.4 + visionSkill * 1.3))) {
               stats.keyPasses++;
               rating += 0.07;
-              chance(us, minute, 'user', 1.05 + visionSkill * 0.4);
+              // most key passes lead to a half-chance; vision makes them clearer
+              chance(us, minute, 'user', 0.55 + visionSkill * 0.35);
             }
           } else {
             rating -= 0.028;

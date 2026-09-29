@@ -373,3 +373,53 @@ export const DB_CLUB_CITY: Record<number, string> = {
   7: 'Eindhoven',
   8: 'Madrid',
 };
+
+/**
+ * Generated club names are "pattern + real city", which regularly lands on the name of a real
+ * club (or a close variant of it). The world is fictional, so those combinations are skipped.
+ * Compared after stripping accents and case (see realClubKey).
+ */
+const REAL_CLUB_NAMES = [
+  // England
+  'Manchester United', 'Manchester City', 'Leeds United', 'Leeds City', 'Newcastle United', 'Newcastle Town', 'Bristol City', 'Bristol Rovers', 'Sheffield United',
+  'Birmingham City', 'Leicester City', 'Norwich City', 'Norwich United', 'Ipswich Town', 'Hull City', 'Derby County', 'Coventry City', 'Coventry United', 'Stoke City',
+  'Bolton Wanderers', 'Blackburn Rovers', 'Brighton Albion', 'Brighton Town', 'Plymouth Argyle', 'Reading Town', 'AFC Liverpool', 'AFC Sunderland', 'London City',
+  'Portsmouth Town', 'Southampton Town', 'Liverpool City', 'Sunderland Albion',
+  // Germany (English city names included: FC Cologne, 1. FC Nuremberg...)
+  'FC Cologne', '1. FC Cologne', 'Fortuna Cologne', 'SV Cologne', 'FC Nuremberg', '1. FC Nuremberg', 'FC Kaiserslautern', '1. FC Kaiserslautern', 'VfB Stuttgart',
+  'Eintracht Frankfurt', 'FC Frankfurt', '1. FC Frankfurt', 'SV Frankfurt', 'Fortuna Düsseldorf', 'Union Berlin', '1. FC Berlin', 'FC Berlin', 'SV Bremen', 'FC Augsburg', 'VfL Bochum',
+  'FC Rostock', 'TSV Munich', 'FC Munich', '1. FC Munich', 'SV Hamburg', 'VfB Leipzig', 'FC Leipzig', '1. FC Leipzig', 'SV Mainz', 'FC Freiburg', 'SV Hannover', 'VfB Karlsruhe', 'FC Karlsruhe',
+  'SpVgg Bielefeld', 'VfL Hamburg', 'SV Stuttgart', 'Eintracht Braunschweig',
+  // Netherlands
+  'FC Utrecht', 'FC Groningen', 'FC Enschede', 'SC Enschede', 'SC Heerenveen', 'FC Eindhoven', 'FC Zwolle', 'FC The Hague', 'Sparta Rotterdam', 'Go Ahead Deventer',
+  'Vitesse Arnhem', 'FC Amsterdam', 'FC Haarlem', 'Quick The Hague', 'Quick Nijmegen', 'VV Maastricht', 'SC Leeuwarden', 'SC Rotterdam', 'FC Alkmaar', 'SC Cambuur',
+  // Spain
+  'Real Madrid', 'Atlético Madrid', 'Madrid CF', 'CF Madrid', 'Racing Madrid', 'CF Barcelona', 'Barcelona CF', 'Barcelona SC', 'Valencia CF', 'CF Valencia', 'Seville CF', 'CF Seville',
+  'Atlético Bilbao', 'Málaga CF', 'CF Málaga', 'CD Málaga', 'Atlético Málaga', 'Real Zaragoza', 'CD Zaragoza', 'Real Vigo', 'Real San Sebastián', 'Villarreal CF', 'CF Villarreal', 'CD Villarreal',
+  'Sporting Gijón', 'Real Gijón', 'Racing Santander', 'Real Santander', 'Real Valladolid', 'Granada CF', 'CF Granada', 'UD Las Palmas', 'Atlético Las Palmas', 'Cádiz CF', 'CF Cádiz',
+  'Real Oviedo', 'Deportivo Oviedo', 'Elche CF', 'CF Elche', 'Córdoba CF', 'CF Córdoba', 'Atlético Pamplona', 'Real Sevilla', 'Atlético Seville',
+  // Italy
+  'AC Milan', 'Milan Calcio', 'FC Milan', 'Turin Calcio', 'FC Turin', 'AC Turin', 'Atletico Rome', 'SS Rome', 'AC Rome', 'Real Rome', 'SS Naples', 'AC Naples', 'Naples Calcio',
+  'AC Florence', 'Florence Calcio', 'Genoa Calcio', 'FC Genoa', 'AC Genoa', 'Unione Genoa', 'FC Bologna', 'Bologna Calcio', 'AC Bologna', 'Virtus Bergamo', 'Virtus Verona',
+  'AC Verona', 'Verona Calcio', 'US Palermo', 'FC Palermo', 'Palermo Calcio', 'SS Bari', 'FC Bari', 'AC Bari', 'Udine Calcio', 'Parma Calcio', 'FC Parma', 'AC Parma',
+  'Cagliari Calcio', 'US Lecce', 'Lecce Calcio', 'FC Empoli', 'Empoli Calcio', 'Brescia Calcio', 'FC Brescia', 'US Salerno', 'Salerno Calcio',
+  // France
+  'Paris FC', 'FC Paris', 'Racing Paris', 'Stade Paris', 'Olympique Marseille', 'US Marseille', 'Olympique Lyon', 'FC Lyon', 'Lyon FC', 'Olympique Lille', 'Lille FC', 'SC Lille',
+  'Girondins Bordeaux', 'FC Bordeaux', 'Olympique Nice', 'FC Nice', 'FC Nantes', 'Nantes FC', 'Stade Rennes', 'AS Saint-Étienne', 'Montpellier FC', 'Racing Strasbourg', 'FC Strasbourg',
+  'Racing Lens', 'Toulouse FC', 'FC Toulouse', 'Stade Reims', 'Stade Brest', 'Le Havre FC', 'Stade Auxerre', 'AS Auxerre', 'FC Metz', 'Metz FC', 'AS Nancy',
+  // Portugal
+  'Sporting Lisbon', 'FC Porto', 'SC Porto', 'Sporting Braga', 'SC Braga', 'Vitória Guimarães', 'Vitória Setúbal', 'Académica Coimbra', 'União Leiria', 'Desportivo Chaves',
+  'GD Chaves', 'GD Estoril', 'Académica Viseu', 'União Funchal', 'Atlético Lisbon', 'SC Faro', 'SC Portimão', 'União Lisbon', 'FC Porto B',
+];
+
+/** normalised lookup key: no accents, lower case */
+export function realClubKey(name: string): string {
+  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+const REAL_CLUB_KEYS = new Set(REAL_CLUB_NAMES.map(realClubKey));
+
+/** true when a generated name matches (or nearly matches) a real club */
+export function isRealClubName(name: string): boolean {
+  return REAL_CLUB_KEYS.has(realClubKey(name));
+}

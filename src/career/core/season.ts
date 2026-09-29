@@ -90,9 +90,11 @@ export function rolloverSeason(state: CareerState, rng: Rng): void {
   let leaguePos = 0;
   let topScorer: { name: string; club: string; goals: number } | undefined;
   let pots: { name: string; club: string } | undefined;
+  let finalTable: [string, number, number, number][] | undefined;
   if (leagueId !== undefined) {
     const table = standings(state, leagueCompId(leagueId, season));
     leaguePos = table.findIndex((r) => r.clubId === u.clubId) + 1;
+    finalTable = table.map((r) => [state.world.clubs[r.clubId].name, r.p, r.gf - r.ga, r.pts]);
     for (const a of leagueAwards(state, leagueId)) {
       if (a.user) awards.push(a.name);
       if (a.name === 'Golden Boot') topScorer = { name: a.winner, club: a.club, goals: parseInt(a.value ?? '0', 10) };
@@ -124,6 +126,7 @@ export function rolloverSeason(state: CareerState, rng: Rng): void {
     trophies,
     awards,
     loan: u.contract.kind === 'loan',
+    table: finalTable,
   };
   u.history.push(record);
   for (const t of trophies) u.trophies.push({ season, name: t, clubName: t.includes('Championship') ? teamName(state, state.nationalTeams.find((n) => n.nation === u.nat && n.level === 'senior')!.id) : userClub?.name ?? '' });

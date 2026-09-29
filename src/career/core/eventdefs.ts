@@ -968,7 +968,7 @@ export const EVENT_DEFS: EventDef[] = [
     condition: (s) => s.life.sponsors.length > 0,
     weight: () => 0.04,
     cooldown: 120,
-    prepare: (s, rng) => ({ brand: rng.pick(s.life.sponsors).brand }),
+    prepare: (s, rng) => (s.life.sponsors.length ? { brand: rng.pick(s.life.sponsors).brand } : null),
     title: () => 'Sponsor request',
     text: (_s, c) => `${c.brand} want you to post an ad mocking a rival club's fans. "Edgy content performs," says their marketing team.`,
     choices: [

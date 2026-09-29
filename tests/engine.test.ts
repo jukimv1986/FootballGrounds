@@ -70,3 +70,29 @@ describe('loaders', () => {
     expect(tris).toBeGreaterThan(1000);
   });
 });
+
+import { CircularBuffer } from '../src/blunted/base/circularbuffer';
+
+describe('CircularBuffer', () => {
+  it('behaves like boost::circular_buffer', () => {
+    const b = new CircularBuffer<number>(3);
+    b.push_back(1);
+    b.push_back(2);
+    b.push_back(3);
+    b.push_back(4); // drops 1
+    expect(b.toArray()).toEqual([2, 3, 4]);
+    expect(b.front()).toBe(2);
+    expect(b.back()).toBe(4);
+    expect(b.at(1)).toBe(3);
+    b.push_front(9); // full: drops the back
+    expect(b.toArray()).toEqual([9, 2, 3]);
+    expect(b.pop_front()).toBe(9);
+    expect(b.pop_back()).toBe(3);
+    expect([...b]).toEqual([2]);
+    b.set_capacity(1);
+    b.push_back(5);
+    expect(b.toArray()).toEqual([5]);
+    b.clear();
+    expect(b.empty()).toBe(true);
+  });
+});

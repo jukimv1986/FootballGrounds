@@ -95,12 +95,78 @@ export class ReplayBallTouchesNetFrame {
   ballTouchesNet = false;
 }
 
+/**
+ * PORT: the C++ kept a boost::circular_buffer<ReplaySpatialFrame> per spatial. With ~500 replay
+ * spatials captured every rendered frame that meant ~500 allocations and O(capacity) array shifts
+ * per frame in JS, so the frames live in fixed typed-array ring buffers instead (same data:
+ * time, position, orientation), oldest first.
+ */
 export class ReplaySpatial {
   spatial!: Spatial;
-  frames: CircularBuffer<ReplaySpatialFrame>;
+  protected readonly capacity: number;
+  protected readonly times: Float64Array;
+  /** 7 floats per frame: position xyz, orientation xyzw */
+  protected readonly data: Float32Array;
+  protected start = 0;
+  protected count = 0;
 
   constructor(frameCount: number) {
-    this.frames = new CircularBuffer<ReplaySpatialFrame>(frameCount);
+    this.capacity = Math.max(1, Math.floor(frameCount));
+    this.times = new Float64Array(this.capacity);
+    this.data = new Float32Array(this.capacity * 7);
+  }
+
+  size(): number {
+    return this.count;
+  }
+
+  push_back(frameTime_ms: number, position: Vector3, orientation: Quaternion): void {
+    let slot: number;
+    if (this.count < this.capacity) {
+      slot = (this.start + this.count) % this.capacity;
+      this.count++;
+    } else {
+      slot = this.start;
+      this.start = (this.start + 1) % this.capacity;
+    }
+    this.times[slot] = frameTime_ms;
+    const o = slot * 7;
+    const p = position.coords;
+    const q = orientation.elements;
+    this.data[o] = p[0];
+    this.data[o + 1] = p[1];
+    this.data[o + 2] = p[2];
+    this.data[o + 3] = q[0];
+    this.data[o + 4] = q[1];
+    this.data[o + 5] = q[2];
+    this.data[o + 6] = q[3];
+  }
+
+  /** time of the i-th frame, oldest first */
+  TimeAt(i: number): number {
+    return this.times[(this.start + i) % this.capacity];
+  }
+
+  PositionAt(i: number): Vector3 {
+    const o = ((this.start + i) % this.capacity) * 7;
+    return new Vector3(this.data[o], this.data[o + 1], this.data[o + 2]);
+  }
+
+  OrientationAt(i: number): Quaternion {
+    const o = ((this.start + i) % this.capacity) * 7;
+    return new Quaternion(this.data[o + 3], this.data[o + 4], this.data[o + 5], this.data[o + 6]);
+  }
+
+  /** index of the first frame with frameTime_ms >= time (size() if none); frame times are ascending */
+  LowerBound(time: number): number {
+    let lo = 0;
+    let hi = this.count;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.TimeAt(mid) < time) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 }
 
@@ -1556,21 +1622,21 @@ export class Match {
 
   ApplyReplayFrame(replayTime_ms: number): void {
     for (let i = 0; i < this.replay.length; i++) {
-      const frames = this.replay[i].frames;
-      for (let f = 0; f < frames.size(); f++) {
-        const frame2 = frames.at(f);
-        if (frame2.frameTime_ms >= replayTime_ms) {
-          const frame1 = f > 0 ? frames.at(f - 1) : frame2;
-          let count = frame2.frameTime_ms - frame1.frameTime_ms;
-          const offset = replayTime_ms - frame1.frameTime_ms;
-          if (count === 0) count = 1; // never divide by zero, will implode universe
-          const bias = offset / count;
+      const frames = this.replay[i];
+      // first frame at or after the requested time (C++: linear search from the oldest frame)
+      const f = frames.LowerBound(replayTime_ms);
+      if (f < frames.size()) {
+        const f1 = f > 0 ? f - 1 : f;
+        const time2 = frames.TimeAt(f);
+        const time1 = frames.TimeAt(f1);
+        let count = time2 - time1;
+        const offset = replayTime_ms - time1;
+        if (count === 0) count = 1; // never divide by zero, will implode universe
+        const bias = offset / count;
 
-          const spatial = this.replay[i].spatial;
-          spatial.SetPosition(frame1.position.Mul(1.0 - bias).Add(frame2.position.Mul(bias)), false);
-          spatial.SetRotation(frame1.orientation.GetSlerped(bias, frame2.orientation).GetNormalized(), false);
-          break;
-        }
+        const spatial = frames.spatial;
+        spatial.SetPosition(frames.PositionAt(f1).Mul(1.0 - bias).Add(frames.PositionAt(f).Mul(bias)), false);
+        spatial.SetRotation(frames.OrientationAt(f1).GetSlerped(bias, frames.OrientationAt(f)).GetNormalized(), false);
       }
     }
 
@@ -1767,11 +1833,8 @@ export class Match {
 
   protected CaptureReplayFrame(replayTime_ms: number): void {
     for (let i = 0; i < this.replay.length; i++) {
-      const frame = new ReplaySpatialFrame();
-      frame.frameTime_ms = replayTime_ms;
-      frame.position = this.replay[i].spatial.GetPosition();
-      frame.orientation = this.replay[i].spatial.GetRotation();
-      this.replay[i].frames.push_back(frame);
+      const r = this.replay[i];
+      r.push_back(replayTime_ms, r.spatial.GetPosition(), r.spatial.GetRotation());
     }
 
     const ballTouchesNetFrame = new ReplayBallTouchesNetFrame();

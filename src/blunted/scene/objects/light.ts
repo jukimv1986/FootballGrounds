@@ -19,7 +19,8 @@ export class Light extends BaseObject {
   }
 
   override CopyObject(postfix: string): Light {
-    const copy = new Light(this.name + postfix);
+    // like C++ Object(src): the copied object keeps its name (postfix only applies to nodes/resources)
+    const copy = new Light(this.name);
     this.CopySpatialTo(copy);
     copy.color = this.color;
     copy.radius = this.radius;

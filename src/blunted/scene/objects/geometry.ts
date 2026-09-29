@@ -3,7 +3,7 @@
 import { AABB } from '../../base/geometry/aabb';
 import { Vector3 } from '../../base/math/vector3';
 import { BaseObject, e_ObjectType } from '../spatial';
-import { GeometryData } from '../resources/geometrydata';
+import { GeometryData, type Material } from '../resources/geometrydata';
 import { Resource } from '../resources/resource';
 import { ResourceManagerPool } from '../../managers/resourcemanagerpool';
 
@@ -12,6 +12,12 @@ export class Geometry extends BaseObject {
   /** bumped by OnUpdateGeometryData; `materialsVersion` only when materials changed too */
   geometryVersion = 0;
   materialsVersion = 0;
+  /**
+   * the triangle meshes' materials as they were at the last OnUpdateGeometryData(true). The C++ renderer
+   * captured them there, per geometry object, so objects sharing one GeometryData (hairstyles) keep their
+   * own textures. Read by src/blunted/render; null = use the live materials.
+   */
+  materialsSnapshot: Material[] | null = null;
 
   constructor(name: string, objectType: e_ObjectType = e_ObjectType.e_ObjectType_Geometry) {
     super(name, objectType);
@@ -19,7 +25,8 @@ export class Geometry extends BaseObject {
 
   /** C++ copy constructor Geometry(src, postfix): deep copies the geometry data */
   override CopyObject(postfix: string): Geometry {
-    const copy = new Geometry(this.name + postfix, this.objectType);
+    // like C++ Object(src): the copied object keeps its name; only nodes and resource copies get the postfix
+    const copy = new Geometry(this.name, this.objectType);
     this.CopySpatialTo(copy);
     if (this.geometryData) {
       const srcName = this.geometryData.GetIdentString();
@@ -45,7 +52,10 @@ export class Geometry extends BaseObject {
   /** tells the renderer the vertex data (and optionally the materials) changed */
   OnUpdateGeometryData(updateMaterials = true): void {
     this.geometryVersion++;
-    if (updateMaterials) this.materialsVersion++;
+    if (updateMaterials) {
+      this.materialsVersion++;
+      this.materialsSnapshot = this.geometryData ? this.geometryData.GetResource().GetTriangleMeshesRef().map((m) => ({ ...m.material })) : null;
+    }
   }
 
   override GetAABB(): AABB {

@@ -212,7 +212,8 @@ export class BaseObject extends Spatial {
 
   /** C++ ObjectFactory::CopyObject: copies this object (subclasses deep-copy their resources) */
   CopyObject(postfix: string): BaseObject {
-    const copy = new BaseObject(this.name + postfix, this.objectType);
+    // like C++ Object(src): the copied object keeps its name (postfix only applies to nodes/resources)
+    const copy = new BaseObject(this.name, this.objectType);
     this.CopySpatialTo(copy);
     return copy;
   }

@@ -220,7 +220,8 @@
 
 .mo-pause-button {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  /* below the scoreboard's TV logo (top right, 1.2 x the scoreboard height) */
+  top: calc(max(2vh, env(safe-area-inset-top, 0px)) + clamp(36px, 5.52vh, 53px) + 10px);
   right: calc(env(safe-area-inset-right, 0px) + 12px);
   width: 44px;
   height: 44px;
@@ -238,6 +239,11 @@
 .mo-pause-button:hover,
 .mo-pause-button:focus-visible {
   opacity: 1;
+}
+
+@media (max-width: 640px) {
+  /* the TV logo is hidden on narrow screens */
+  .mo-pause-button { top: calc(env(safe-area-inset-top, 0px) + 12px); }
 }
 
 .mo-pause-button[hidden],

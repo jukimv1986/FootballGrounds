@@ -3,7 +3,7 @@
 //
 // URL parameters:
 //   quality=low|medium|high   renderer quality (default high)
-//   view=tv|close|goal|overview|low   camera (default tv = Match::UpdateIngameCamera "wide cam")
+//   view=tv|close|goal|goalfront|net|overview|low   camera (default tv = Match::UpdateIngameCamera "wide cam")
 //   tonemap=aces|agx|neutral|original, exposure=1, fog=0.6 (1 = original amount)
 //   split=0                   don't split the stadium into 24 m chunks (the match does)
 //   anim=0                    no per-frame vertex animation of the player bodies
@@ -371,6 +371,12 @@ async function Main(): Promise<void> {
         break;
       case 'goal':
         ApplyCamera(FreeCam(new Vector3(-66, -6, 5.5), 0.46 * pi, -0.5 * pi + 0.12, 42));
+        break;
+      case 'goalfront':
+        ApplyCamera(FreeCam(new Vector3(-38, 9, 4), 0.47 * pi, 0.5 * pi + 0.25, 40));
+        break;
+      case 'net':
+        ApplyCamera(FreeCam(new Vector3(-47, 4, 1.8), 0.49 * pi, 0.5 * pi + 0.3, 50, 0.3, 260));
         break;
       case 'overview':
         ApplyCamera(FreeCam(new Vector3(0, -125, 95), 0.3 * pi, 0, 42, 20, 400));

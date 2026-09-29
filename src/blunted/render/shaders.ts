@@ -4,6 +4,7 @@
 //                        exponent shininess * 128, shadows darken direct light to 25% (shadow.intensity 0.75)
 //   ambient.frag      -> RE_IndirectDiffuse: 70% desaturated albedo * ambient (the blueish tint lives in
 //                        the hemisphere light colours) * (1 + self-illumination)
+//   simple.frag       -> alpha test at 0.12 (plus a mip-level alpha boost so nets don't vanish)
 //   postprocess.frag  -> linear fog capped at 25% applied *before* tone mapping, and the optional
 //                        'original' tone curve (slight desaturation + AlternateContrast S-curve + clamp)
 // Light intensities carry the original's "brightness 2.0" factor, so no 1/PI Lambert normalisation here.
@@ -66,6 +67,23 @@ fbIllumination = fbSelfIllumination;
 #endif
 `;
 
+/**
+ * inserted before <alphatest_fragment>: thin alpha-tested details (goal nets, fences, crowd) lose
+ * coverage in the lower mip levels and vanish in the distance; scaling alpha by the mip level keeps
+ * them (see Ben Golus, "Anti-aliased Alpha Test: The Esoteric Alpha To Coverage")
+ */
+export const FB_ALPHA_MIP = /* glsl */ `
+#if defined( USE_ALPHATEST ) && defined( USE_MAP )
+	{
+		vec2 fbTexel = vMapUv * vec2( textureSize( map, 0 ) );
+		vec2 fbDx = dFdx( fbTexel );
+		vec2 fbDy = dFdy( fbTexel );
+		float fbMipLevel = max( 0.0, 0.5 * log2( max( dot( fbDx, fbDx ), dot( fbDy, fbDy ) ) ) );
+		diffuseColor.a *= 1.0 + fbMipLevel * 0.25;
+	}
+#endif
+`;
+
 /** inserted before <tonemapping_fragment>; <fog_fragment> is removed */
 export const FB_FOG = /* glsl */ `
 #ifdef USE_FOG
@@ -97,6 +115,7 @@ export function InstallCustomToneMapping(): void {
 export function PatchPhongShader(shader: THREE.WebGLProgramParametersWithUniforms): void {
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <lights_phong_pars_fragment>', FB_LIGHTS_PARS)
+    .replace('#include <alphatest_fragment>', FB_ALPHA_MIP + '\n#include <alphatest_fragment>')
     .replace('#include <lights_phong_fragment>', '#include <lights_phong_fragment>\n' + FB_ILLUMINATION)
     .replace('#include <fog_fragment>', '')
     .replace('#include <tonemapping_fragment>', FB_FOG + '\n#include <tonemapping_fragment>');

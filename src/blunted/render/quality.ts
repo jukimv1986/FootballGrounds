@@ -14,12 +14,13 @@ export interface QualitySettings {
   shadowRadius: number;
   /** max texture anisotropy (clamped to what the GPU supports) */
   anisotropy: number;
-  /** whether static geometry (stadium) casts shadows; players, ball and other small objects always do */
+  /** whether static geometry (stadium) casts shadows; players, ball and other small objects always do.
+   *  Cheap since static casters are merged into one or two shadow draw calls. */
   staticShadows: boolean;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<RenderQuality, Readonly<QualitySettings>>> = {
-  low: { maxPixelRatio: 1, antialias: false, shadows: true, shadowMapSize: 1024, shadowRadius: 1, anisotropy: 2, staticShadows: false },
+  low: { maxPixelRatio: 1, antialias: false, shadows: true, shadowMapSize: 1024, shadowRadius: 1, anisotropy: 2, staticShadows: true },
   medium: { maxPixelRatio: 1.5, antialias: true, shadows: true, shadowMapSize: 2048, shadowRadius: 1.5, anisotropy: 4, staticShadows: true },
   high: { maxPixelRatio: 2, antialias: true, shadows: true, shadowMapSize: 4096, shadowRadius: 2, anisotropy: 16, staticShadows: true },
 };

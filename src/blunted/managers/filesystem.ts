@@ -118,7 +118,8 @@ class FileSystemImpl {
     if (IMAGE_EXT.test(p)) {
       const blob = await res.blob();
       if (typeof createImageBitmap !== 'undefined') {
-        this.images.set(p, await createImageBitmap(blob));
+        // unaltered pixels: normal/specular maps and alpha edges must reach the GPU as authored
+        this.images.set(p, await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }));
       } else {
         const img = new Image();
         img.src = URL.createObjectURL(blob);

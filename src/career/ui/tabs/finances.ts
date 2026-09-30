@@ -83,8 +83,8 @@ export function renderFinances(app: CareerApp): HTMLElement {
       card('Transport', [
         h('p', { class: 'cc-dim' }, 'Better transport makes the commute less tiring. Your old vehicle is traded in.'),
         table(
-          ['', 'Price', 'Running cost', 'Commute', ''],
-          TRANSPORT.map((t) => [t.name, t.price ? cur(t.price) : '—', `${cur(t.weekly)}/wk`, `×${t.commute.toFixed(2)}`, life.transport === t.kind ? pill('Yours', 'good') : btn('Buy', () => {
+          ['', 'Price', 'Per week', 'Commute', ''],
+          TRANSPORT.map((t) => [t.name, t.price ? cur(t.price) : '—', cur(t.weekly), `×${t.commute.toFixed(2)}`, life.transport === t.kind ? pill('Yours', 'good') : btn('Buy', () => {
             const err = buyTransport(s, t.kind);
             app.toast(err ?? `New ride: ${t.name}`, err ? 'warn' : 'success');
             app.render();

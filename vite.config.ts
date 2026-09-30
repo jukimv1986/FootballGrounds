@@ -13,5 +13,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // match and career simulation tests are CPU bound; CI runners are ~2x slower than a laptop
+    testTimeout: 60_000,
   },
 });

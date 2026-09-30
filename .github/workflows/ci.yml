@@ -8,8 +8,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -17,7 +17,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npx vite build
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
           path: dist
@@ -28,6 +28,8 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # until Pages is enabled for the repository the deploy step fails; don't mark the run red for it
+    continue-on-error: true
     permissions:
       pages: write
       id-token: write

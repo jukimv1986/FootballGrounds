@@ -12,36 +12,64 @@ app stores later (Tauri/Electron/Capacitor).
 
 ## Playing
 
+You need [Node.js](https://nodejs.org/) 22 LTS (or 20.19+) and a browser with WebGL 2
+(Chrome, Edge, Firefox, Safari).
+
 ```bash
+git clone https://github.com/jukimv1986/FootballGrounds.git
+cd FootballGrounds
 npm install
-npm run dev          # http://localhost:5173
+npm run dev          # then open http://localhost:5173
 ```
+
+(Or download the repository as a ZIP from GitHub, unzip it and run the last two commands in that
+folder.) `npm run build` produces a static site in `dist/` that can be hosted anywhere.
 
 - **Career**: create your footballer and live his career (see below).
 - **Quick match**: pick two clubs, kits and controllers and play a match.
 - **Settings**: graphics quality, audio, camera, gameplay and key bindings.
 
-Controls (keyboard, rebindable): arrows move · S short pass · W through pass · A high pass/cross ·
-D shot · E sprint · C dribble · Q switch player · Esc pause. Without the ball: S pressure,
-A sliding tackle, W keeper rush, D team pressure. Gamepads (standard mapping) and on-screen touch
-controls are supported.
+Controls (keyboard, rebindable in Settings → Controls):
+
+| Key | With the ball | Without the ball |
+|---|---|---|
+| Arrows | move | move |
+| S | short pass | pressure |
+| W | through pass | keeper rush |
+| A | high pass / cross | sliding tackle |
+| D | shot | team pressure |
+| E / C | sprint / dribble | sprint |
+| Q | switch player | switch player |
+| Esc | pause | pause |
+
+Set pieces are taken by hand when your player is the taker (in a quick match that includes the
+kick-off): press a pass button to play them. Gamepads (standard
+mapping) and on-screen touch controls (phones/tablets) are supported.
 
 ## Career mode
 
-You start at 15–16 in a club's youth academy in the city you choose and play until you retire:
+You start at 15–16 in a club's youth academy in the country and city you choose, and play until
+you retire:
 
-- **Football**: training sessions (fitness, technique, tactics, recovery…) that develop your
-  22 attributes along a realistic age curve, squad selection by the coach, league and cup
-  seasons, contracts, transfers and loans, injuries, national team call-ups.
+- **Football**: training sessions (fitness, speed, strength, technique, finishing, defending,
+  tactics, recovery…) develop your 22 attributes along a realistic age curve up to your
+  potential. The coach picks the team from ability, form, fitness and your relationship; you
+  break through from the U19s to the first team, play league, cup and continental football,
+  sign contracts (yourself or through your agent), move on transfers and loans, get injured,
+  suspended and called up to the national teams.
 - **Matches**: play them yourself in 3D ("be a pro": you control only your player and the camera
   keeps you in view) or simulate them; your rating and stats feed your form, reputation and
-  market value.
-- **Life outside the pitch**: living in a city (housing, transport, lifestyle), money,
-  family, friends, relationships, agent, media and social media, sponsors, education and
-  narrative events with choices.
-- **Retirement**: a legacy summary of the whole career and a hall of fame.
+  market value. Leave a 3D match early and the rest is simulated.
+- **Life outside the pitch**: a city with districts and venues, housing from academy digs to a
+  villa (rent, buy, mortgages), transport, diet and sleep, money, sponsors and investments,
+  family, friends, romance and children, teammates and coaches, media and social media,
+  education and coaching badges, charity, and 60+ narrative events with choices and
+  consequences.
+- **Milestones, retirement and legacy**: 54 milestones, a legacy screen summarising the whole
+  career (trophies, awards, caps, money, family, what you do next) and a hall of fame across
+  careers.
 
-Careers are saved in the browser (several slots, export/import).
+Careers are saved in the browser (several slots, autosave, export/import of save files).
 
 ## Project layout
 
@@ -76,7 +104,7 @@ See [docs/PORTING.md](docs/PORTING.md) for the conventions.
 | `npm run assets` | regenerate `public/data/manifest.json` and the JSON database after changing data files |
 
 `render-test.html` is a standalone renderer test scene (stadium, players, ball) with camera
-presets (`?view=tv|close|goal|overview`).
+presets (`?view=tv|close|goal|overview`); `career-test.html` boots only the career mode.
 
 ## Data and modding
 

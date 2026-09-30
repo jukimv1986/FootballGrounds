@@ -1,0 +1,542 @@
+/* In-match layers: Gui2 widgets (#hud), touch controls and the match overlay (#match-overlay).
+   Stacking: canvas < #hud < #app (menus, hidden during a match) < .touch-controls (900)
+   < #match-overlay (1000, also hosts the loading panel above the menus). Tokens from theme.css. */
+
+/* ----- Gui2 widgets (src/game/ui/gui2.ts) -----
+   Defaults only: :where() keeps them at zero specificity so widget styles (ingame.css) win. */
+
+/* layer order (z-index) is set in index.html: canvas 0, #hud 1, #app 2 */
+#hud {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:where(#hud .gui2-view) {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+:where(#hud .gui2-caption) {
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: visible;
+  /* default outline (SetOutlineColor() replaces it inline); stays legible over grass and sky */
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.85),
+    1px -1px 0 rgba(0, 0, 0, 0.85),
+    -1px 1px 0 rgba(0, 0, 0, 0.85),
+    1px 1px 0 rgba(0, 0, 0, 0.85),
+    0 1px 3px rgba(0, 0, 0, 0.6);
+  paint-order: stroke fill;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+}
+
+:where(#hud .gui2-image) {
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+}
+
+/* ----- touch controls (src/game/hid/touch.ts) ----- */
+
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.touch-controls[hidden] {
+  display: none;
+}
+
+.touch-stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 65%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-stick-base {
+  position: absolute;
+  left: calc(env(safe-area-inset-left, 0px) + 96px);
+  top: calc(100% - env(safe-area-inset-bottom, 0px) - 104px);
+  width: 128px;
+  height: 128px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(12, 22, 17, 0.28);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.touch-stick-base.active {
+  opacity: 1;
+}
+
+.touch-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(238, 244, 239, 0.55);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.touch-buttons {
+  position: absolute;
+  right: calc(env(safe-area-inset-right, 0px) + 14px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-template-areas:
+    'switch through sprint'
+    'lob    pass    shot';
+  gap: 10px;
+  align-items: end;
+  pointer-events: none;
+}
+
+.touch-button {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 22, 17, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.05;
+  pointer-events: auto;
+  touch-action: none;
+  transition: transform 0.06s, background 0.06s;
+}
+
+.touch-button-big {
+  width: 76px;
+  height: 76px;
+}
+
+.touch-button.active {
+  transform: scale(0.93);
+  background: rgba(61, 220, 132, 0.55);
+  border-color: var(--accent);
+}
+
+.touch-button-label {
+  font-size: 13px;
+}
+
+.touch-button-big .touch-button-label {
+  font-size: 15px;
+}
+
+.touch-button-sublabel {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-transform: lowercase;
+}
+
+.touch-button[data-id='shot'] { grid-area: shot; background: rgba(255, 93, 93, 0.35); }
+.touch-button[data-id='pass'] { grid-area: pass; }
+.touch-button[data-id='through'] { grid-area: through; }
+.touch-button[data-id='lob'] { grid-area: lob; }
+.touch-button[data-id='sprint'] { grid-area: sprint; }
+.touch-button[data-id='switch'] { grid-area: switch; }
+.touch-button[data-id='shot'].active { background: rgba(255, 93, 93, 0.7); border-color: var(--danger); }
+
+/* ----- match overlay (src/app/matchoverlay.ts) ----- */
+
+.match-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  font-family: var(--font);
+  color: var(--text);
+}
+
+.mo-toasts {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14%);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92vw, 520px);
+}
+
+.mo-toast {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px 16px;
+  font-weight: 600;
+  animation: mo-toast-in 0.18s ease-out;
+  transition: opacity 0.35s, transform 0.35s;
+}
+
+.mo-toast-goal { border-color: var(--accent); color: var(--accent); }
+.mo-toast-warn { border-color: var(--warn); }
+.mo-toast-card { border-color: var(--gold); }
+
+.mo-toast-out {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+@keyframes mo-toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.mo-pause-button {
+  position: absolute;
+  /* below the scoreboard's TV logo (top right, 1.2 x the scoreboard height) */
+  top: calc(max(2vh, env(safe-area-inset-top, 0px)) + clamp(36px, 5.52vh, 53px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 12px);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: rgba(12, 22, 17, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.mo-pause-button:hover,
+.mo-pause-button:focus-visible {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  /* the TV logo is hidden on narrow screens */
+  .mo-pause-button { top: calc(env(safe-area-inset-top, 0px) + 12px); }
+}
+
+.mo-pause-button[hidden],
+.match-overlay.has-panel .mo-pause-button {
+  display: none;
+}
+
+.mo-pause-icon {
+  width: 14px;
+  height: 16px;
+  border-left: 4px solid var(--text);
+  border-right: 4px solid var(--text);
+}
+
+.mo-panel-host {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.mo-panel-host.active {
+  display: flex;
+  pointer-events: auto;
+}
+
+.mo-panel-host.mo-modal {
+  background: rgba(4, 10, 7, 0.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.mo-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 22px 24px;
+  width: min(92vw, 360px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mo-kicker {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.mo-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.mo-text {
+  margin: 0 0 4px;
+  color: var(--text-dim);
+}
+
+.mo-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  margin-top: 2px;
+}
+
+.mo-button {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 11px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.mo-button:hover {
+  background: var(--bg-elev);
+  border-color: var(--text-faint);
+}
+
+.mo-button:focus-visible,
+.mo-button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mo-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.mo-primary:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.mo-danger {
+  color: var(--danger);
+}
+
+.mo-camera {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 2px;
+}
+
+.mo-slider {
+  display: grid;
+  grid-template-columns: 64px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.mo-slider-label { color: var(--text-dim); }
+.mo-slider-value { text-align: right; font-variant-numeric: tabular-nums; }
+.mo-slider input { width: 100%; accent-color: var(--accent); }
+.mo-slider input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* loading */
+
+.mo-loading {
+  text-align: center;
+  align-items: stretch;
+}
+
+.mo-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.mo-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+.mo-loading-percent {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* full time */
+
+.mo-fulltime {
+  width: min(94vw, 480px);
+  text-align: center;
+}
+
+.mo-score {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 2px;
+}
+
+.mo-team {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mo-home { text-align: right; }
+.mo-away { text-align: left; }
+
+.mo-result {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mo-scorer-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.mo-scorers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mo-scorer-cols .mo-scorers:first-child { text-align: right; }
+.mo-scorer-cols .mo-scorers:last-child { text-align: left; }
+.mo-og { color: var(--text-faint); }
+
+.mo-player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin: 6px 0;
+}
+
+.mo-rating {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--accent-ink);
+}
+
+.mo-rating.rating-great { background: var(--accent); }
+.mo-rating.rating-good { background: #9be27a; }
+.mo-rating.rating-ok { background: var(--gold); }
+.mo-rating.rating-poor { background: var(--danger); }
+
+.mo-player-name { font-weight: 700; font-size: 16px; }
+.mo-player-facts { font-size: 13px; color: var(--text-dim); }
+
+@media (max-height: 420px) {
+  .mo-panel { padding: 14px 18px; gap: 8px; }
+  .mo-title { font-size: 21px; }
+  .mo-result { font-size: 32px; }
+  .touch-button { width: 54px; height: 54px; }
+  .touch-button-big { width: 66px; height: 66px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mo-toast, .mo-progress-bar, .touch-button, .touch-stick-base { transition: none; animation: none; }
+}
+
+/* goal replay badge (src/app/replaydirector.ts) */
+.replay-badge {
+  position: absolute;
+  top: 7%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(8, 14, 11, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-family: var(--font-display, sans-serif);
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 50;
+}
+.replay-badge small {
+  font-family: var(--font-body, sans-serif);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.7;
+}
+.replay-badge__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  animation: replay-blink 1s steps(2, start) infinite;
+}
+@keyframes replay-blink { to { visibility: hidden; } }

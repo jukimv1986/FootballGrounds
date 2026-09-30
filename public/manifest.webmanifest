@@ -1,0 +1,18 @@
+{
+  "name": "Football Career",
+  "short_name": "Football Career",
+  "description": "Play a footballer from youngster to retirement: matches, training and life off the pitch. Built on a port of Gameplay Football.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0b1410",
+  "theme_color": "#0b1410",
+  "categories": ["games", "sports"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

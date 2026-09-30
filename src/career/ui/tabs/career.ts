@@ -26,6 +26,7 @@ export function renderCareer(app: CareerApp): HTMLElement {
     c
       ? h('div', { class: 'cc-contract-head' }, crest(s, c.id, 'md'), h('div', {}, h('strong', {}, c.name), h('p', { class: 'cc-dim' }, `${k.kind === 'youth' ? 'Youth contract' : k.kind === 'loan' ? `On loan from ${s.world.clubs[k.parentClubId ?? -1]?.name ?? '—'}` : 'Professional contract'} · ${ROLE_NAMES[k.role]}`)))
       : h('p', { class: 'cc-alert cc-alert--warn' }, 'You are a free agent. Clubs send offers to your inbox — sign one to get back on the pitch.'),
+    s.events.flags.retireAtSeasonEnd === s.season ? h('p', { class: 'cc-alert cc-alert--info' }, `Farewell season: you retire when the season ends (30 Jun ${s.season + 1}). Make it count.`) : null,
     keyValue([
       ['Wage', `${money(s, k.wage)} / week`],
       ['Expires', c ? `30 Jun ${k.endSeason + 1} (${contractYearsLeft(s)} season${contractYearsLeft(s) > 1 ? 's' : ''} left)` : '—'],

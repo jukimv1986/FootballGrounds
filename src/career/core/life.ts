@@ -40,6 +40,11 @@ export function bumpAffinity(p: Person, delta: number): void {
   else p.affinity = clamp(p.affinity + delta, 0, 100);
 }
 
+/** parents, siblings and his own children */
+export function isFamily(p: Person): boolean {
+  return p.role === 'mother' || p.role === 'father' || p.role === 'sibling' || p.role === 'child';
+}
+
 export function peopleOf(state: CareerState, role: PersonRole): Person[] {
   return state.life.people.filter((p) => p.role === role && !p.gone);
 }
@@ -183,6 +188,9 @@ export function activityBlocked(state: CareerState, def: ActivityDef, slot: Slot
     case 'away':
       if (life.cityId === life.hometown) return 'Your family lives in this city';
       break;
+    case 'kids':
+      if (!peopleOf(state, 'child').length) return 'You have no children';
+      break;
   }
   const cost = activityCost(state, def);
   if (cost > 0 && life.money < cost) return 'Not enough money';
@@ -210,7 +218,7 @@ function applyEffects(state: CareerState, e: ActivityEffects, rng: Rng, scale = 
   if (e.romance) h.romance = clamp(h.romance + e.romance * scale, 0, 100);
   if (e.family) {
     h.family = clamp(h.family + e.family * scale * 0.5, 0, 100);
-    for (const p of state.life.people) if (!p.gone && (p.role === 'mother' || p.role === 'father' || p.role === 'sibling')) {
+    for (const p of state.life.people) if (!p.gone && isFamily(p)) {
       bumpAffinity(p, e.family * scale * 0.35);
       p.lastContact = state.day;
     }
@@ -325,6 +333,8 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
         m.lastContact = state.day;
         summary = `Good times with ${m.first} and the lads.`;
       }
+      // a teammate's partner has a friend who would be perfect for you…
+      maybeMeetSomeone(state, rng, 0.015);
       break;
     }
     case 'friends': {
@@ -334,6 +344,8 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
         p.lastContact = state.day;
       }
       summary = friends.length ? `Caught up with ${friends.map((p) => p.first).slice(0, 2).join(' and ')}.` : 'You enjoyed a coffee on your own.';
+      maybeMeetSomeone(state, rng, 0.02);
+      if (!friends.length) maybeMakeFriend(state, rng, 0.15);
       break;
     }
     case 'post':
@@ -385,9 +397,11 @@ export function doActivity(state: CareerState, fullKey: string, slot: Slot, rng:
       state.events.flags.nightOutDay = state.day;
       summary = 'A big night out.';
       maybeMeetSomeone(state, rng, 0.12);
+      maybeMakeFriend(state, rng, 0.04);
       break;
     case 'meet_people':
       maybeMeetSomeone(state, rng, 0.08);
+      maybeMakeFriend(state, rng, 0.06);
       break;
     case 'fan_event':
       summary = 'Hundreds of selfies. Your hand hurts from signing.';
@@ -408,6 +422,13 @@ function maybeMeetSomeone(state: CareerState, rng: Rng, p: number): void {
   if (rng.chance(p)) state.events.queue.push({ defId: 'romance_meet', day: state.day, ctx: {} });
 }
 
+/** chance of striking up a new friendship (new_friend event) */
+function maybeMakeFriend(state: CareerState, rng: Rng, p: number): void {
+  if (peopleOf(state, 'friend').length >= 5 || ageAt(state.user.born, state.day) < 16) return;
+  if (state.events.pending || state.events.queue.length > 2 || state.day - (state.events.log.new_friend ?? -999) < 40) return;
+  if (rng.chance(p)) state.events.queue.push({ defId: 'new_friend', day: state.day + 1, ctx: {} });
+}
+
 export function startDating(state: CareerState, rng: Rng): Person {
   const c = club(state, state.user.clubId);
   const nat = rng.chance(0.7) ? state.user.nat : c?.countryKey ?? state.user.nat;
@@ -415,6 +436,15 @@ export function startDating(state: CareerState, rng: Rng): Person {
   const p = addPerson(state, { first: n.first, last: n.last, role: 'partner', affinity: 55, stage: 'dating', job: rng.pick(['architect', 'nurse', 'student', 'designer', 'lawyer', 'musician', 'journalist', 'physiotherapist', 'teacher', 'photographer']), cityId: state.life.cityId });
   state.life.partnerId = p.id;
   state.life.happiness.romance = clamp(state.life.happiness.romance + 12, 0, 100);
+  return p;
+}
+
+/** a son or daughter is born (a family member who lives with him) */
+export function addChild(state: CareerState, first: string, kind: string): Person {
+  const p = addPerson(state, { first, last: state.user.last, role: 'child', affinity: 85, job: kind === 'daughter' ? 'daughter' : 'son', cityId: state.life.cityId });
+  addNotice(state, `Welcome to the world, ${first}!`, 'gold');
+  addTimeline(state, `Became a parent: ${first} was born`, 'good');
+  state.life.happiness.family = clamp(state.life.happiness.family + 10, 0, 100);
   return p;
 }
 
@@ -483,6 +513,7 @@ export function weeklyCosts(state: CareerState): { label: string; amount: number
   const out: { label: string; amount: number }[] = [];
   if (!life.housing.owned && life.housing.weekly > 0) out.push({ label: `Rent (${housingDef(life.housing.kind).name})`, amount: life.housing.weekly });
   for (const p of life.properties) out.push({ label: `Upkeep (${housingDef(p.kind).name})`, amount: Math.round(p.value * 0.0004) });
+  for (const p of life.properties) if (p.mortgage && p.mortgage > 0 && p.mortgageWeekly) out.push({ label: `Mortgage (${housingDef(p.kind).name})`, amount: Math.min(p.mortgageWeekly, Math.ceil(p.mortgage * (1 + MORTGAGE_RATE / 52))) });
   const diet = DIETS.find((d) => d.kind === life.diet)!;
   // academy digs and the family home include meals and bills
   const provided = life.housing.kind === 'digs' || life.housing.kind === 'family';
@@ -514,7 +545,7 @@ export function dailyLife(state: CareerState, rng: Rng): void {
   // social need
   h.social = clamp(h.social - (hasTrait(f, 'party') ? 0.9 : hasTrait(f, 'introvert') ? 0.35 : 0.6), 0, 100);
   // family happiness follows family affinity
-  const fam = state.life.people.filter((p) => !p.gone && (p.role === 'mother' || p.role === 'father' || p.role === 'sibling'));
+  const fam = state.life.people.filter((p) => !p.gone && isFamily(p));
   const famAvg = fam.length ? fam.reduce((a, p) => a + p.affinity, 0) / fam.length : 60;
   h.family = clamp(h.family + (famAvg - h.family) * 0.05, 0, 100);
   // romance follows the partner (or drifts to neutral when single)
@@ -550,7 +581,7 @@ export function dailyLife(state: CareerState, rng: Rng): void {
     }
     // relationships fade a little every day and faster when neglected for a while
     const rate = person.role === 'partner' ? 0.3 : person.role === 'friend' ? 0.22 : person.role === 'teammate' ? 0.07 : 0.1;
-    const familyBoost = hasTrait(f, 'family') && (person.role === 'mother' || person.role === 'father' || person.role === 'sibling') ? 1.3 : 1;
+    const familyBoost = hasTrait(f, 'family') && isFamily(person) ? 1.3 : 1;
     const neglect = since > 10 ? 1.6 : 1;
     person.affinity = clamp(person.affinity - rate * familyBoost * neglect, 0, 100);
   }
@@ -578,6 +609,18 @@ export function weeklyFinances(state: CareerState, rng: Rng): void {
   const w = netWeeklyWage(state);
   if (w.gross > 0) addMoney(state, w.net, 'Wage (net)');
   for (const c of weeklyCosts(state)) addMoney(state, -c.amount, c.label);
+  // mortgage repayments (charged above with the other costs) pay interest first, then the loan
+  for (const p of life.properties) {
+    if (!p.mortgage || p.mortgage <= 0 || !p.mortgageWeekly) continue;
+    const interest = p.mortgage * (MORTGAGE_RATE / 52);
+    p.mortgage = Math.max(0, Math.round(p.mortgage + interest - p.mortgageWeekly));
+    if (p.mortgage === 0) {
+      delete p.mortgage;
+      delete p.mortgageWeekly;
+      addNotice(state, `Mortgage paid off: the ${housingDef(p.kind).name.toLowerCase()} is all yours.`, 'gold');
+      state.life.happiness.money = clamp(state.life.happiness.money + 6, 0, 100);
+    }
+  }
   // sponsors deliver duty evenings; unpaid duties annoy them
   void rng;
   if (life.money < -20000 && !state.events.flags.debtWarned) {
@@ -626,6 +669,12 @@ export function monthlyFinances(state: CareerState, rng: Rng): void {
   for (const p of life.properties) if (!livesIn(state, p)) addMoney(state, propertyRent(p), `Rent received (${housingDef(p.kind).name})`);
   if (life.charity.foundation) addMoney(state, -Math.round(2000 * city(state, life.cityId).cost), 'Foundation running costs');
   if (life.charity.foundation) life.charity.points += 2;
+}
+
+/** cash + investments + property, minus what is still owed on mortgages */
+export function netWorth(state: CareerState): number {
+  const l = state.life;
+  return l.money + l.investments.reduce((a, i) => a + i.amount, 0) + l.properties.reduce((a, p) => a + p.value - (p.mortgage ?? 0), 0);
 }
 
 export function invest(state: CareerState, key: string, amount: number): boolean {
@@ -710,10 +759,42 @@ export function housingOptions(state: CareerState): HousingOption[] {
   return out;
 }
 
-export function moveHouse(state: CareerState, opt: HousingOption, buy: boolean): string | null {
+export const MORTGAGE_RATE = 0.045;
+export const MORTGAGE_DEPOSIT = 0.2;
+const MORTGAGE_YEARS = 15;
+
+/** fixed weekly repayment of a mortgage (annuity over MORTGAGE_YEARS) */
+export function mortgagePayment(loan: number): number {
+  const r = MORTGAGE_RATE / 52;
+  const n = MORTGAGE_YEARS * 52;
+  return Math.ceil((loan * r) / (1 - Math.pow(1 + r, -n)));
+}
+
+/** null when the bank lends him the money for this home, else why not */
+export function mortgageBlocked(state: CareerState, opt: HousingOption): string | null {
+  if (opt.price <= 0) return 'This place cannot be bought';
+  const f = state.user;
+  if (f.clubId < 0 || f.contract.kind !== 'pro') return 'Banks want a professional contract';
+  if (f.contract.endSeason - state.season < 1) return 'Banks want at least two years left on your contract';
+  if (state.life.properties.some((p) => p.mortgage)) return 'You already have a mortgage';
+  const deposit = Math.round(opt.price * MORTGAGE_DEPOSIT);
+  if (state.life.money < deposit) return `You need a ${Math.round(MORTGAGE_DEPOSIT * 100)}% deposit`;
+  const pay = mortgagePayment(opt.price - deposit);
+  if (pay > netWeeklyWage(state).net * 0.35) return 'Repayments would be over a third of your wage';
+  return null;
+}
+
+export function moveHouse(state: CareerState, opt: HousingOption, buy: boolean, mortgage = false): string | null {
   const life = state.life;
   if (opt.blocked) return opt.blocked;
-  if (buy) {
+  if (buy && mortgage) {
+    const why = mortgageBlocked(state, opt);
+    if (why) return why;
+    const deposit = Math.round(opt.price * MORTGAGE_DEPOSIT);
+    const loan = opt.price - deposit;
+    addMoney(state, -deposit, `Deposit: ${opt.name}`);
+    life.properties.push({ kind: opt.kind, cityId: life.cityId, district: opt.district, value: opt.price, boughtDay: state.day, mortgage: loan, mortgageWeekly: mortgagePayment(loan) });
+  } else if (buy) {
     if (opt.price <= 0) return 'This place cannot be bought';
     if (life.money < opt.price) return 'Not enough money';
     addMoney(state, -opt.price, `Bought: ${opt.name}`);
@@ -744,8 +825,8 @@ export function sellProperty(state: CareerState, index: number): number {
   const p = state.life.properties[index];
   if (!p) return 0;
   if (livesIn(state, p)) return 0;
-  const proceeds = Math.round(p.value * 0.96);
-  addMoney(state, proceeds, `Sold property`);
+  const proceeds = Math.round(p.value * 0.96) - (p.mortgage ?? 0);
+  addMoney(state, proceeds, p.mortgage ? 'Sold property (mortgage repaid)' : 'Sold property');
   state.life.properties.splice(index, 1);
   return proceeds;
 }

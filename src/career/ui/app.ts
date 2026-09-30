@@ -154,6 +154,13 @@ export class CareerApp {
     this.renderTop();
     this.renderNav();
     this.renderBar();
+    // horizontally scrolling tab rows (phone): keep the active tab in view after re-rendering
+    for (const [row, sel] of [[this.navEl, '.cc-nav-item.is-active'], ...[...this.content.querySelectorAll<HTMLElement>('.tabs')].map((t) => [t, '.tab.is-active'] as const)] as const) {
+      const act = row.querySelector<HTMLElement>(sel);
+      if (!act || row.scrollWidth <= row.clientWidth + 1) continue;
+      const left = act.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+      if (left < row.scrollLeft || left + act.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = Math.max(0, left - (row.clientWidth - act.offsetWidth) / 2);
+    }
     const target = this.ui['scroll-to'];
     if (target) {
       delete this.ui['scroll-to'];

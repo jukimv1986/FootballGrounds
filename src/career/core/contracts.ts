@@ -242,20 +242,27 @@ export function transferInterest(state: CareerState, rng: Rng): void {
   const a = agent(state);
   const reach = a ? a.reach ?? 0.5 : 0.25;
   const pushed = (state.events.flags.agentPush ?? -99) > state.day - 14 ? 0.15 : 0;
-  const p = clamp(0.03 + buzz * 0.05 + reach * 0.06 + pushed - (age > 32 ? 0.05 : 0), 0.005, 0.35);
+  // a club that met him secretly before the window (tapping_up event) comes knocking
+  const tappedBy = state.events.flags.tappedBy;
+  const tapped = tappedBy !== undefined && state.day - (state.events.flags.tappedDay ?? -999) < 240 && tappedBy !== f.clubId ? tappedBy : -1;
+  const p = clamp(0.03 + buzz * 0.05 + reach * 0.06 + pushed + (tapped >= 0 ? 0.2 : 0) - (age > 32 ? 0.05 : 0), 0.005, 0.5);
   if (!rng.chance(p)) return;
   const candidates = interestedClubs(state);
+  if (tapped >= 0 && !candidates.includes(tapped)) candidates.push(tapped);
   if (candidates.length === 0) return;
-  const buyerId = rng.weighted(candidates, (id) => Math.pow(state.world.clubs[id].reputation / 50, 2));
+  const buyerId = tapped >= 0 && rng.chance(0.75) ? tapped : rng.weighted(candidates, (id) => Math.pow(state.world.clubs[id].reputation / 50, 2));
+  const wasTapped = buyerId === tapped;
+  if (wasTapped) delete state.events.flags.tappedBy;
   const buyer = state.world.clubs[buyerId];
   refreshMarketValue(state);
-  let fee = roundMoney(f.marketValue * rng.range(0.85, 1.35));
+  // a club that already sounded him out bids to get it done
+  let fee = roundMoney(f.marketValue * rng.range(0.85, 1.35) * (wasTapped ? 1.15 : 1));
   const rc = f.contract.releaseClause;
   const cur = club(state, f.clubId)!;
   // selling club's stance: key players are hard to prise away
   const val = clubValuation(state, f.clubId);
   const importance = clamp((val.diff + 6) / 12, 0, 1);
-  let accepted = rng.chance(clamp(0.75 - importance * 0.55 + (f.transferRequest ? 0.35 : 0) - (contractYearsLeft(state) > 2 ? 0.1 : -0.2), 0.05, 0.95));
+  let accepted = rng.chance(clamp(0.75 - importance * 0.55 + (f.transferRequest ? 0.35 : 0) + (wasTapped ? 0.2 : 0) - (contractYearsLeft(state) > 2 ? 0.1 : -0.2), 0.05, 0.95));
   if (rc > 0 && fee >= rc) accepted = true;
   if (!accepted && rc > 0 && buyer.balance > rc * 1.5 && rng.chance(0.3)) {
     fee = rc;
@@ -380,6 +387,46 @@ export function negotiate(state: CareerState, offerId: Id, d: Demand): Negotiati
   if (roleRank(d.role) <= cap.maxRole) o.role = d.role;
   o.years = d.years;
   return { outcome: 'countered', message: `${c.name} came back with an improved offer (${formatMoney(state, o.wage)}/week). Their patience is ${o.patience > 0.6 ? 'fine' : o.patience > 0.3 ? 'wearing thin' : 'almost gone'}.` };
+}
+
+/**
+ * The agent handles the talks: he estimates the club's limits (a better agent reads them more
+ * accurately and dares one more push) and settles close to them. Leaves the offer pending with the
+ * agreed terms, ready to sign — or withdrawn if a weak agent overplays his hand.
+ */
+export function agentNegotiate(state: CareerState, offerId: Id, rng: Rng): NegotiationResult {
+  const o = state.offers.find((x) => x.id === offerId);
+  if (!o || o.status !== 'pending') return { outcome: 'withdrawn', message: 'This offer is no longer available.' };
+  const a = agent(state);
+  if (!a) return { outcome: 'rejected', message: 'You have no agent to negotiate for you.' };
+  const skill = a.skill ?? 0.5;
+  const before = { wage: o.wage, bonus: o.signingBonus };
+  const cap = clubCeiling(state, o);
+  const err = rng.gauss(0, 0.09 * (1 - skill)) + (1 - skill) * 0.04;
+  const years = userAge(state) < 29 ? Math.max(o.years, Math.min(5, o.years + (skill > 0.6 ? 1 : 0))) : o.years;
+  const role = skill > 0.6 && roleRank(o.role) < cap.maxRole ? ROLE_ORDER[cap.maxRole] : o.role;
+  let d: Demand = { wage: roundMoney(cap.wage * (1 + err)), years, role, releaseClause: o.releaseClause > 0 ? roundMoney(cap.minClause * (1 - err)) : 0, signingBonus: roundMoney(cap.bonus * (1 + err)) };
+  let r = negotiate(state, offerId, d);
+  for (let round = 0; r.outcome === 'countered' && round < 3; round++) {
+    // a strong agent pushes once more between the counter and his estimate, then takes the deal
+    const push = round === 0 && skill >= 0.7;
+    d = push
+      ? { wage: roundMoney((o.wage + d.wage) / 2), years: o.years, role: o.role, releaseClause: o.releaseClause, signingBonus: roundMoney((o.signingBonus + d.signingBonus) / 2) }
+      : { wage: o.wage, years: o.years, role: o.role, releaseClause: o.releaseClause, signingBonus: o.signingBonus };
+    r = negotiate(state, offerId, d);
+  }
+  const name = `${a.first} ${a.last}`;
+  bumpAgent(a, r.outcome === 'accepted' ? 3 : -4);
+  if (r.outcome === 'accepted') {
+    const gain = before.wage > 0 ? Math.round((o.wage / before.wage - 1) * 100) : 0;
+    return { outcome: 'accepted', message: `${name} has agreed terms: ${formatMoney(state, o.wage)}/week (${gain >= 0 ? '+' : ''}${gain}% on the first offer), ${o.years} years as a ${ROLE_NAMES[o.role].toLowerCase()}${o.signingBonus > before.bonus ? `, signing bonus ${formatMoney(state, o.signingBonus)}` : ''}. Ready to sign.` };
+  }
+  if (r.outcome === 'withdrawn') return { outcome: 'withdrawn', message: `${name} pushed too hard — ${club(state, o.clubId)?.name ?? 'the club'} walked away.` };
+  return r;
+}
+
+function bumpAgent(a: { affinity: number }, d: number): void {
+  a.affinity = clamp(a.affinity + d, 0, 100);
 }
 
 export function rejectOffer(state: CareerState, offerId: Id): void {

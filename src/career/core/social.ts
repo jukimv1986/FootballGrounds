@@ -117,13 +117,16 @@ export function weeklySocial(state: CareerState, rng: Rng): void {
   const f = state.user;
   const fame = Math.max(f.rep.local * 0.4, f.rep.national, f.rep.world * 1.3);
   const target = 150 + Math.pow(fame, 2.6) * 18 * (hasTrait(f, 'media') ? 1.6 : 1);
-  // followers drift towards what his fame "deserves"
-  f.followers = Math.round(f.followers + (target - f.followers) * 0.02 + rng.gauss(0, Math.max(5, f.followers * 0.002)));
+  // followers drift towards what his fame "deserves" — quickly up, slowly down (fans stay)
+  const gap = target - f.followers;
+  f.followers = Math.round(f.followers + gap * (gap > 0 ? 0.02 : 0.004) + rng.gauss(0, Math.max(5, f.followers * 0.002)));
   if (f.followers < 50) f.followers = 50;
-  // reputation needs to be earned again and again: it fades towards zero when out of the spotlight
-  f.rep.local = clamp(f.rep.local * 0.99 - 0.05, 0, 100);
-  f.rep.national = clamp(f.rep.national * 0.988 - 0.04, 0, 100);
-  f.rep.world = clamp(f.rep.world * 0.99 - 0.03, 0, 100);
+  // reputation needs to be earned again and again: it fades when out of the spotlight. (Tuned so
+  // a trophy-winning international settles around 70-80 national reputation, a solid top-flight
+  // regular around 30.)
+  f.rep.local = clamp(f.rep.local * 0.994 - 0.03, 0, 100);
+  f.rep.national = clamp(f.rep.national * 0.994 - 0.02, 0, 100);
+  f.rep.world = clamp(f.rep.world * 0.994 - 0.02, 0, 100);
   if (rng.chance(0.25)) sponsorOffer(state, rng);
 }
 

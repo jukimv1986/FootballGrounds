@@ -10,10 +10,11 @@ import type { EventCtx, EventDef } from './events';
 import { fullName, hasTrait, userAge, userOvr } from './footballer';
 import { applyRehabChoice, specialistCost, startUserInjury } from './health';
 import { club, city } from './index';
-import { agent, breakUp, buyTransport, enrollCourse, invest, partner, peopleOf, startDating } from './life';
+import { addChild, addPerson, agent, breakUp, bumpAffinity, buyTransport, enrollCourse, invest, isFamily, partner, peopleOf, startDating } from './life';
+import { NAME_POOLS, randomName } from './data/names';
 import { addMessage, addMoney, addNotice, addPost, formatMoney } from './messages';
 import { Rng, clamp } from './rng';
-import { hireAgent, agentOptions, requestTransfer, clubValuation } from './contracts';
+import { hireAgent, agentOptions, requestTransfer, clubValuation, checkImprovedContract, inTransferWindow } from './contracts';
 import type { CareerState, Person } from './types';
 import { nextUserFixture } from './results';
 import { teamName } from './competitions';
@@ -51,7 +52,7 @@ function fx(s: CareerState, e: Fx): void {
   if (e.social) h.social = clamp(h.social + e.social, 0, 100);
   if (e.family) {
     h.family = clamp(h.family + e.family, 0, 100);
-    for (const p of s.life.people) if (!p.gone && (p.role === 'mother' || p.role === 'father' || p.role === 'sibling')) p.affinity = clamp(p.affinity + e.family * 0.8, 0, 100);
+    for (const p of s.life.people) if (!p.gone && isFamily(p)) p.affinity = clamp(p.affinity + e.family * 0.8, 0, 100);
   }
   if (e.romance) h.romance = clamp(h.romance + e.romance, 0, 100);
   if (e.home) h.home = clamp(h.home + e.home, 0, 100);
@@ -1846,6 +1847,836 @@ export const EVENT_DEFS: EventDef[] = [
           fx(s, { money: -2500, moneyLabel: 'Training camp', fitness: 8, morale: -2, prof: 3 });
           s.user.sharpness = clamp(s.user.sharpness + 10, 0, 100);
           return 'Altitude, sprints and ice baths. You will arrive at pre-season flying.';
+        },
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------ mind & body
+  {
+    id: 'burnout',
+    category: 'health',
+    trigger: 'morning',
+    condition: (s) => s.life.fatigueMental > 72 && !s.life.vacation,
+    weight: () => 0.08,
+    cooldown: 60,
+    title: () => 'Running on empty',
+    text: () => 'You wake up tired before the alarm goes. Training feels like a chore, your phone never stops and you snap at people you love. Something has to give.',
+    choices: [
+      {
+        label: 'See the club\'s sports psychologist',
+        hint: '−−mental fatigue, +morale · a few sessions',
+        auto: 2,
+        apply: (s) => {
+          s.life.fatigueMental = clamp(s.life.fatigueMental - 35, 0, 100);
+          fx(s, { morale: 6, prof: 1, energy: -3 });
+          return 'Talking helps more than you expected. You leave with tools, not just advice.';
+        },
+      },
+      {
+        label: 'Ask the coach for a few days off',
+        hint: '−−mental fatigue · miss training, −coach',
+        auto: 1,
+        apply: (s) => {
+          s.life.fatigueMental = clamp(s.life.fatigueMental - 45, 0, 100);
+          s.events.flags.skipTrainingDay = s.day;
+          fx(s, { coach: -3, morale: 5, family: 4 });
+          s.user.sharpness = clamp(s.user.sharpness - 6, 0, 100);
+          return 'Three days with your phone off. You come back hungry again.';
+        },
+      },
+      {
+        label: 'Push through it',
+        hint: '−morale · it may get worse',
+        auto: (s) => (hasTrait(s.user, 'resilient') ? 1.2 : 0.3),
+        apply: (s, _c, rng) => {
+          fx(s, { morale: -6, prof: 1 });
+          if (rng.chance(hasTrait(s.user, 'resilient') ? 0.2 : 0.45)) {
+            fx(s, { form: -8 });
+            return 'You grit your teeth. It shows on the pitch — your touch deserts you for a week.';
+          }
+          return 'You grit your teeth and get through the week. Just.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'dodgy_supplement',
+    category: 'health',
+    trigger: 'morning',
+    condition: (s) => hasClub(s) && userAge(s) >= 17 && !s.events.flags.supplementTaken && peopleOf(s, 'teammate').length > 0,
+    weight: () => 0.003,
+    cooldown: 1500,
+    prepare: (s, rng) => {
+      const m = mate(s, rng);
+      return m ? { mate: m.first } : null;
+    },
+    title: () => 'A miracle powder',
+    text: (_s, c) => `${c.mate} swears by a recovery supplement he orders online: "Legs like new the day after a game. Everyone at my old club used it." It is not on the club's approved list.`,
+    choices: [
+      {
+        label: 'Ask the club nutritionist first',
+        hint: '+professionalism · no shortcuts',
+        auto: 2,
+        apply: (s) => {
+          fx(s, { prof: 2, coach: 1 });
+          return 'The nutritionist reads the label and goes pale: it contains a banned stimulant. She has a word with the whole squad.';
+        },
+      },
+      {
+        label: 'Try it',
+        hint: '+energy · could end in a failed test',
+        auto: 0.05,
+        apply: (s, _c, rng) => {
+          fx(s, { energy: 12, fitness: 2 });
+          s.events.flags.supplementTaken = s.day;
+          if (rng.chance(0.4)) s.events.queue.push({ defId: 'failed_test', day: s.day + rng.int(7, 40), ctx: {} });
+          return 'You do feel fresher. Probably placebo. Probably.';
+        },
+      },
+      {
+        label: 'Politely say no',
+        auto: 1.5,
+        apply: () => '"Suit yourself." You stick to protein shakes and sleep.',
+      },
+    ],
+  },
+  {
+    id: 'failed_test',
+    category: 'health',
+    trigger: 'queued',
+    title: () => 'Adverse finding',
+    text: () => 'A letter from the anti-doping agency: your sample from the random test last month contains a banned stimulant. The club doctor asks what you have been taking.',
+    choices: [
+      {
+        label: 'Tell the truth about the supplement',
+        hint: 'a ban — shorter for cooperating',
+        auto: 2,
+        apply: (s) => {
+          s.user.banned += 6;
+          fx(s, { repNat: -10, repLocal: -8, coach: -12, morale: -12, family: -5, followers: -0.08 });
+          addNotice(s, 'Banned for 6 matches: contaminated supplement.', 'bad');
+          return 'The panel accepts it was careless, not cheating. Six matches out — and a lesson you will teach every youngster you meet.';
+        },
+      },
+      {
+        label: 'Fight it: demand the B sample',
+        hint: 'a gamble: cleared, or a much longer ban',
+        auto: 0.8,
+        apply: (s, _c, rng) => {
+          fx(s, { money: -Math.round(15000 * city(s, s.life.cityId).cost), moneyLabel: 'Lawyers' });
+          if (rng.chance(0.25)) {
+            fx(s, { morale: 4, repNat: -2 });
+            return 'The B sample is inconclusive and the case collapses. You are cleared — but the headlines came first.';
+          }
+          s.user.banned += 15;
+          fx(s, { repNat: -20, repLocal: -15, coach: -20, morale: -20, family: -8, followers: -0.15 });
+          s.life.sponsors = [];
+          addNotice(s, 'Banned for 15 matches after the B sample confirmed the finding.', 'bad');
+          return 'The B sample confirms it. Fifteen matches, and your sponsors walk away.';
+        },
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------ friends, family life, children
+  {
+    id: 'new_friend',
+    category: 'social',
+    trigger: 'weekly',
+    condition: (s) => userAge(s) >= 16 && peopleOf(s, 'friend').length < 5,
+    weight: (s) => (s.life.cityId !== s.life.hometown ? 0.05 : 0.02) + (peopleOf(s, 'friend').length < 2 ? 0.05 : 0) + (hasTrait(s.user, 'introvert') ? -0.015 : 0),
+    cooldown: 70,
+    prepare: (s, rng) => {
+      const c = club(s, s.user.clubId);
+      const n = randomName(rng, rng.chance(0.75) ? c?.countryKey ?? s.user.nat : s.user.nat);
+      const who = rng.pick([
+        { job: 'neighbour', how: 'your new neighbour', ask: 'invites you over to watch the big fight on Saturday' },
+        { job: 'barista', how: 'the barista at your usual café', ask: 'asks if you fancy joining his five-a-side team of hopeless amateurs' },
+        { job: 'musician', how: 'a guitarist you met at a friend\'s birthday', ask: 'invites you to his band\'s gig on Friday' },
+        { job: 'physio student', how: 'a physio student on placement at the club', ask: 'suggests a coffee to talk about anything but football' },
+        { job: 'chef', how: 'the chef of the restaurant round the corner', ask: 'offers to teach you three proper recipes' },
+        { job: 'former pro', how: 'a retired local footballer', ask: 'invites you for a round of golf and some old stories' },
+      ]);
+      return { first: n.first, last: n.last, job: who.job, how: who.how, ask: who.ask };
+    },
+    title: () => 'A new face',
+    text: (s, c) => `${c.first}, ${c.how} in ${cityName(s)}, ${c.ask}. It is nice when someone just talks to you as a person.`,
+    choices: [
+      {
+        label: 'Say yes',
+        hint: '+a new friend, +social',
+        auto: 2,
+        apply: (s, c) => {
+          addPerson(s, { first: String(c.first), last: String(c.last), role: 'friend', affinity: 58, job: String(c.job), cityId: s.life.cityId });
+          fx(s, { social: 8, morale: 2, home: 3 });
+          return `${c.first} is good company. ${cityName(s)} feels a bit more like home.`;
+        },
+      },
+      {
+        label: 'Invite him to your next home game instead',
+        hint: '+a new friend, +local reputation',
+        available: (s) => (hasClub(s) ? true : 'You have no club'),
+        auto: 1,
+        apply: (s, c) => {
+          addPerson(s, { first: String(c.first), last: String(c.last), role: 'friend', affinity: 62, job: String(c.job), cityId: s.life.cityId });
+          fx(s, { social: 5, repLocal: 0.8 });
+          return `${c.first} watches from the stands in your shirt and tells the whole neighbourhood.`;
+        },
+      },
+      {
+        label: 'Politely keep your distance',
+        hint: 'people want things from footballers',
+        auto: (s) => (hasTrait(s.user, 'introvert') ? 1.5 : 0.4),
+        apply: (s) => {
+          fx(s, { social: -2 });
+          return 'You smile, make an excuse and go home.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'parents_house',
+    category: 'family',
+    trigger: 'weekly',
+    condition: (s) => !s.events.flags.parentsHouse && s.life.money > 250000 * city(s, s.life.hometown).cost * 1.6 && s.life.people.some((p) => (p.role === 'mother' || p.role === 'father') && !p.gone),
+    weight: () => 0.06,
+    cooldown: 200,
+    prepare: (s) => ({ price: Math.round((250000 * city(s, s.life.hometown).cost) / 1000) * 1000, town: city(s, s.life.hometown).name }),
+    title: () => 'The house on the corner',
+    text: (s, c) => `Your parents still live in the small terraced house in ${c.town} where you grew up. On the phone your mum mentions, very casually, that the house on the corner — the one with the garden she always loved — is for sale (${formatMoney(s, Number(c.price))}).`,
+    choices: [
+      {
+        label: 'Buy it for them',
+        hint: '+++family, +morale · a big cheque',
+        available: (s, c) => (s.life.money >= Number(c.price) ? true : 'Not enough money'),
+        auto: 2,
+        apply: (s, c) => {
+          fx(s, { money: -Number(c.price), moneyLabel: 'A house for your parents', family: 25, morale: 10, followers: 0.01 });
+          s.events.flags.parentsHouse = s.day;
+          addNotice(s, 'You bought your parents their dream house.', 'gold');
+          return 'Your dad is lost for words for the first time in his life. Your mum just holds you.';
+        },
+      },
+      {
+        label: 'Pay off their mortgage instead',
+        hint: '++family · cheaper',
+        available: (s, c) => (s.life.money >= Number(c.price) * 0.25 ? true : 'Not enough money'),
+        auto: 1,
+        apply: (s, c) => {
+          fx(s, { money: -Math.round(Number(c.price) * 0.25), moneyLabel: 'Parents\' mortgage', family: 12, morale: 4 });
+          return 'No more bank letters for your parents. They insist it was not necessary. It was.';
+        },
+      },
+      {
+        label: 'Change the subject',
+        hint: '−family',
+        auto: 0.3,
+        apply: (s) => {
+          fx(s, { family: -4 });
+          return 'Your mum says it was only a thought. It was a little more than that.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'baby_news',
+    category: 'family',
+    trigger: 'weekly',
+    condition: (s) => {
+      const p = partner(s);
+      return !!p && ['living', 'engaged', 'married'].includes(p.stage ?? '') && p.affinity >= 65 && userAge(s) >= 22 && peopleOf(s, 'child').length < 3 && !s.events.queue.some((q) => q.defId === 'baby_born');
+    },
+    weight: (s) => (partner(s)?.stage === 'married' ? 0.03 : 0.012) * (hasTrait(s.user, 'family') ? 1.6 : 1) * [1, 0.5, 0.25][peopleOf(s, 'child').length],
+    cooldown: 300,
+    title: () => 'A family of our own?',
+    text: (s) => `${partner(s)?.first ?? 'Your partner'} curls up next to you on the sofa: "I have been thinking. What if we ${peopleOf(s, 'child').length ? 'gave our little one a brother or sister' : 'started a family'}?"`,
+    choices: [
+      {
+        label: '"Yes. Let us do it."',
+        hint: '++romance · a baby in about nine months',
+        auto: (s) => [2, 1.2, 0.5][peopleOf(s, 'child').length] ?? 0.3,
+        apply: (s, _c, rng) => {
+          fx(s, { partner: 10, romance: 10, morale: 5 });
+          s.events.queue.push({ defId: 'baby_born', day: s.day + rng.int(250, 300), ctx: {} });
+          return 'Nine months later your life will never be the same again.';
+        },
+      },
+      {
+        label: '"After I have stopped playing."',
+        hint: '−romance',
+        auto: 0.5,
+        apply: (s) => {
+          fx(s, { partner: -10, romance: -6 });
+          return '"Your career always comes first." It is not a question.';
+        },
+      },
+      {
+        label: '"Let us wait a year."',
+        hint: '−a little romance',
+        auto: 0.8,
+        apply: (s) => {
+          fx(s, { partner: -3 });
+          return 'A compromise. For now.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'baby_born',
+    category: 'family',
+    trigger: 'queued',
+    condition: (s) => !!partner(s),
+    prepare: (s, rng) => {
+      const pool = NAME_POOLS[s.user.nat] ?? NAME_POOLS.ENG;
+      const girl = rng.chance(0.5);
+      const taken = new Set(s.life.people.map((p) => p.first));
+      const names = (girl ? pool.female : pool.first).filter((n) => !taken.has(n) && n !== s.user.first);
+      return { name: rng.pick(names.length ? names : girl ? pool.female : pool.first), kind: girl ? 'daughter' : 'son' };
+    },
+    title: (_s, c) => `It is a ${c.kind === 'daughter' ? 'girl' : 'boy'}!`,
+    text: (s, c) => `At 4:12 in the morning ${partner(s)?.first ?? 'your partner'} gives birth to a healthy ${c.kind === 'daughter' ? 'girl' : 'boy'}: ${c.name}. You have never been this tired or this happy. The club has a game at the weekend.`,
+    choices: [
+      {
+        label: 'Take a week of paternity leave',
+        hint: '+++family, ++romance · −fitness, −sharpness',
+        auto: 2,
+        apply: (s, c) => {
+          addChild(s, String(c.name), String(c.kind));
+          fx(s, { family: 18, partner: 12, romance: 10, morale: 10, fitness: -4, sleep: 0.8 });
+          s.user.sharpness = clamp(s.user.sharpness - 8, 0, 100);
+          return `A week of nappies, cuddles and no sleep. ${c.name} has your nose.`;
+        },
+      },
+      {
+        label: 'Back at training after two days',
+        hint: '+professionalism, +coach · −romance',
+        auto: (s) => (hasTrait(s.user, 'professional') ? 1.2 : 0.6),
+        apply: (s, c) => {
+          addChild(s, String(c.name), String(c.kind));
+          fx(s, { family: 8, partner: -6, prof: 2, coach: 3, morale: 6, sleep: 0.85 });
+          return `The lads have decorated your locker with balloons. You miss ${c.name} already.`;
+        },
+      },
+      {
+        label: 'Hire a night nanny',
+        hint: '++family, sleep better · costs money',
+        available: (s) => (s.life.money > 12000 ? true : 'Not enough money'),
+        auto: 1,
+        apply: (s, c) => {
+          addChild(s, String(c.name), String(c.kind));
+          fx(s, { family: 12, partner: 4, morale: 8, money: -Math.round(10000 * city(s, s.life.cityId).cost), moneyLabel: 'Night nanny' });
+          return `Somebody else does the 3am feeds; you do all the cuddles. ${c.name} is perfect.`;
+        },
+      },
+    ],
+  },
+  {
+    id: 'child_moment',
+    category: 'family',
+    trigger: 'weekly',
+    condition: (s) => peopleOf(s, 'child').length > 0,
+    weight: () => 0.06,
+    cooldown: 120,
+    prepare: (s, rng) => {
+      const kids = peopleOf(s, 'child');
+      if (!kids.length) return null;
+      const kid = rng.pick(kids);
+      const years = (s.day - kid.since) / 365;
+      const moment = years < 1.5 ? `${kid.first}'s first steps are surely only days away — ${partner(s)?.first ?? 'the family'} wants you home every evening this week` : years < 5 ? `${kid.first}'s nursery nativity play is on the evening before a match. ${kid.first} is playing a sheep` : years < 11 ? `${kid.first}'s school sports day is on your afternoon off, and ${kid.first} is desperate for you to run the parents' race` : `${kid.first} has a big match for the school team and wants you on the touchline — without the whole school asking for selfies`;
+      return { id: kid.id, name: kid.first, moment };
+    },
+    title: (_s, c) => `${c.name} needs you`,
+    text: (_s, c) => `${c.moment}.`,
+    choices: [
+      {
+        label: 'Be there, whatever it takes',
+        hint: '++family · −energy',
+        auto: 2,
+        apply: (s, c) => {
+          const kid = s.life.people.find((p) => p.id === c.id);
+          if (kid) {
+            bumpAffinity(kid, 12);
+            kid.lastContact = s.day;
+          }
+          fx(s, { family: 10, morale: 5, energy: -8, partner: 4 });
+          return `${c.name}'s face when you walk in is worth more than any trophy.`;
+        },
+      },
+      {
+        label: 'Video call — you have work to do',
+        hint: '+professionalism · −family',
+        auto: 0.6,
+        apply: (s, c) => {
+          const kid = s.life.people.find((p) => p.id === c.id);
+          if (kid) kid.affinity = clamp(kid.affinity - 5, 0, 100);
+          fx(s, { family: -3, prof: 1 });
+          return `You watch on a phone screen in the hotel. ${c.name} waves at the camera.`;
+        },
+      },
+      {
+        label: 'Send the grandparents',
+        hint: '+family (parents) · −child',
+        auto: 0.5,
+        apply: (s, c) => {
+          const kid = s.life.people.find((p) => p.id === c.id);
+          if (kid) kid.affinity = clamp(kid.affinity - 3, 0, 100);
+          for (const p of s.life.people) if (!p.gone && (p.role === 'mother' || p.role === 'father')) bumpAffinity(p, 4);
+          return 'Your parents film every second of it and send you forty videos.';
+        },
+      },
+    ],
+  },
+
+  {
+    id: 'new_coach',
+    category: 'club',
+    trigger: 'queued',
+    condition: (s) => hasClub(s),
+    title: () => 'A new man in charge',
+    text: (_s, c) => `${c.coach ?? 'The new coach'} holds his first team meeting: a ${c.style ?? 'balanced'} coach who likes a ${c.formation ?? '4-4-2'}. "Nobody has a place in this team. Show me."`,
+    choices: [
+      {
+        label: 'Knock on his door and introduce yourself',
+        hint: '++coach · some teammates call it sucking up',
+        auto: (s) => (hasTrait(s.user, 'leader') || hasTrait(s.user, 'ambitious') ? 2 : 1),
+        apply: (s) => {
+          fx(s, { coach: 9, prof: 1, teammates: -1 });
+          return 'He appreciates the handshake. "Good. Now prove it on the grass."';
+        },
+      },
+      {
+        label: 'Ask him what he expects from you',
+        hint: '+coach · learn where you stand',
+        auto: 1.5,
+        apply: (s, c) => {
+          fx(s, { coach: 5 });
+          const v = clubValuation(s, s.user.clubId);
+          const where = v.diff > 2 ? 'one of the first names on his team sheet' : v.diff > -2.5 ? 'a starter if you keep your level' : v.diff > -6 ? 'close to the starting XI — but not there yet' : 'one for the future, for now';
+          return `He is straight with you: he sees you as ${where}.${Number(c.youthFaith ?? 50) > 60 && userAge(s) < 22 ? ' And he likes giving young players a chance.' : ''}`;
+        },
+      },
+      {
+        label: 'Let your football do the talking',
+        hint: '+morale',
+        auto: 1,
+        apply: (s) => {
+          fx(s, { morale: 2 });
+          return 'Head down, work hard. He will notice. Probably.';
+        },
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------ dressing room, integrity, media deals
+  {
+    id: 'teammate_clash',
+    category: 'club',
+    trigger: 'morning',
+    condition: (s) => hasClub(s) && !s.user.injury && isSeason(s) && peopleOf(s, 'teammate').length > 0,
+    weight: (s) => (hasTrait(s.user, 'hothead') ? 0.012 : 0.004),
+    cooldown: 150,
+    prepare: (s, rng) => {
+      const m = mate(s, rng);
+      return m ? { mate: m.first, mateId: m.id } : null;
+    },
+    title: () => 'Handbags in training',
+    text: (_s, c) => `Small-sided game, last minute. ${c.mate} goes through the back of you — again — and then shoves you when you complain. The whole squad stops and stares.`,
+    choices: [
+      {
+        label: 'Walk away',
+        hint: '+professionalism, +coach · he thinks he won',
+        auto: 2,
+        apply: (s, c) => {
+          const p = s.life.people.find((x) => x.id === c.mateId);
+          if (p) p.affinity = clamp(p.affinity - 3, 0, 100);
+          fx(s, { prof: 2, coach: 3, morale: -1 });
+          return 'The coach nods at you on the way in. The mature thing to do.';
+        },
+      },
+      {
+        label: 'Give it straight back',
+        hint: '+respect from some · −coach, a fine',
+        auto: (s) => (hasTrait(s.user, 'hothead') ? 2 : 0.4),
+        apply: (s, c, rng) => {
+          const p = s.life.people.find((x) => x.id === c.mateId);
+          if (p) p.affinity = clamp(p.affinity - 10, 0, 100);
+          const fine = Math.round(Math.max(200, s.user.contract.wage * 0.5));
+          fx(s, { coach: -7, teammates: 1, morale: 2, money: -fine, moneyLabel: 'Club fine', repLocal: -0.5 });
+          if (rng.chance(0.35)) {
+            fx(s, { repLocal: -1.5, followers: 0.01 });
+            return `It takes four players to separate you. A fine of half a week's wages (${formatMoney(s, fine)}) — and the clip is all over social media by the evening.`;
+          }
+          return `It takes four players to separate you. The club fines you half a week's wages (${formatMoney(s, fine)}).`;
+        },
+      },
+      {
+        label: 'Laugh it off, shake hands after',
+        hint: '++teammate relationship',
+        auto: 1.2,
+        apply: (s, c) => {
+          const p = s.life.people.find((x) => x.id === c.mateId);
+          if (p) bumpAffinity(p, 12);
+          fx(s, { teammates: 2 });
+          return `"Sorry, bro, I get carried away." ${c.mate} buys the coffees for a week.`;
+        },
+      },
+    ],
+  },
+  {
+    id: 'match_fixer',
+    category: 'career',
+    trigger: 'weekly',
+    condition: (s) => hasClub(s) && s.user.squad === 'first' && userAge(s) >= 18 && !s.events.flags.fixerTaken,
+    weight: () => 0.004,
+    cooldown: 600,
+    prepare: (s) => ({ amount: Math.round(Math.max(5000, s.user.contract.wage * 6) / 500) * 500 }),
+    title: () => 'An envelope',
+    text: (s, c) => `A polite man in an expensive coat stops you outside the training ground. "Nothing dishonest. Pick up a yellow card in the first half hour on Saturday. ${formatMoney(s, Number(c.amount))}, cash, nobody will ever know."`,
+    choices: [
+      {
+        label: 'Report him to the federation',
+        hint: '+reputation, +coach · a statement to the police',
+        auto: 2,
+        apply: (s) => {
+          fx(s, { repNat: 3, repLocal: 3, coach: 4, morale: 2, prof: 3, energy: -4 });
+          addNotice(s, 'Your report helped break up a betting ring.', 'good');
+          return 'Three weeks later the police arrest a gang that approached players across the league. The federation thanks you publicly.';
+        },
+      },
+      {
+        label: 'Refuse and walk on',
+        hint: 'neutral',
+        auto: 1.5,
+        apply: () => 'You never see him again. You think about it more than you would like to.',
+      },
+      {
+        label: 'Take the money',
+        hint: '+money · if it ever comes out…',
+        auto: 0.02,
+        apply: (s, c, rng) => {
+          fx(s, { money: Number(c.amount), moneyLabel: 'Cash (do not ask)', prof: -8, morale: -3 });
+          s.events.flags.fixerTaken = s.day;
+          if (rng.chance(0.45)) s.events.queue.push({ defId: 'fixer_caught', day: s.day + rng.int(30, 120), ctx: { amount: Number(c.amount) } });
+          return 'Twenty-second minute, a clumsy tackle, a yellow card. The envelope is heavier than you expected.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'fixer_caught',
+    category: 'career',
+    trigger: 'queued',
+    title: () => 'Investigators at the door',
+    text: () => 'Two investigators from the federation are waiting in the club office. They have betting records, phone data and a photo of you with the man in the expensive coat.',
+    choices: [
+      {
+        label: 'Confess and cooperate',
+        hint: 'a long ban and a fine — but it ends here',
+        auto: 2,
+        apply: (s, c) => {
+          s.user.banned += 10;
+          fx(s, { repNat: -15, repLocal: -15, coach: -20, money: -Number(c.amount ?? 5000) * 3, moneyLabel: 'Federation fine', morale: -15, family: -8, followers: -0.15 });
+          if (s.life.sponsors.length) addNotice(s, 'Your sponsors terminated their deals.', 'bad');
+          s.life.sponsors = [];
+          addNotice(s, 'Banned for 10 matches for breaching betting rules.', 'bad');
+          return 'A ten-match ban, a heavy fine and headlines you will never live down. But you can look people in the eye again.';
+        },
+      },
+      {
+        label: 'Deny everything',
+        hint: 'a gamble: cleared, or banned for much longer',
+        auto: 1,
+        apply: (s, c, rng) => {
+          if (rng.chance(0.45)) {
+            fx(s, { repNat: -4, repLocal: -4, morale: -4 });
+            return 'The evidence is not strong enough. The case is dropped — but the rumours never quite go away.';
+          }
+          s.user.banned += 20;
+          fx(s, { repNat: -25, repLocal: -25, coach: -30, money: -Number(c.amount ?? 5000) * 5, moneyLabel: 'Federation fine', morale: -22, family: -12, followers: -0.25 });
+          s.life.sponsors = [];
+          addNotice(s, 'Banned for 20 matches after lying to investigators.', 'bad');
+          return 'The phone records are damning. A twenty-match ban. Your sponsors are gone by lunchtime.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'documentary_offer',
+    category: 'media',
+    trigger: 'weekly',
+    condition: (s) => hasClub(s) && (s.user.followers >= 60000 || s.user.rep.national >= 55),
+    weight: () => 0.015,
+    cooldown: 720,
+    prepare: (s) => ({ fee: Math.round(Math.max(40000, Math.min(2_000_000, s.user.followers * 0.6)) / 1000) * 1000 }),
+    title: () => 'Lights, camera…',
+    text: (s, c) => `A streaming platform wants to follow you for a whole season — home, training, family, the lot — for a fly-on-the-wall documentary. They offer ${formatMoney(s, Number(c.fee))}.`,
+    choices: [
+      {
+        label: 'All access',
+        hint: '+money, ++followers · cameras everywhere, −coach',
+        auto: (s) => (hasTrait(s.user, 'media') ? 2 : 0.8),
+        apply: (s, c) => {
+          fx(s, { money: Number(c.fee), moneyLabel: 'Documentary fee', followers: 0.3, repNat: 3, coach: -4, prof: -2, partner: -4 });
+          s.life.fatigueMental = clamp(s.life.fatigueMental + 12, 0, 100);
+          return 'The trailer gets millions of views. Your partner hates the camera in the kitchen.';
+        },
+      },
+      {
+        label: 'Football only — no family, no home',
+        hint: '+money, +followers',
+        auto: 1.5,
+        apply: (s, c) => {
+          fx(s, { money: Math.round(Number(c.fee) * 0.4), moneyLabel: 'Documentary fee', followers: 0.1, repNat: 1 });
+          return 'A tasteful series about the work behind the scenes. The coach even likes it.';
+        },
+      },
+      {
+        label: 'No cameras',
+        hint: '+professionalism',
+        auto: (s) => (hasTrait(s.user, 'introvert') ? 2 : 0.6),
+        apply: (s) => {
+          fx(s, { prof: 1 });
+          return 'Some things should stay private.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'tapping_up',
+    category: 'career',
+    trigger: 'weekly',
+    condition: (s) => hasClub(s) && s.user.contract.kind === 'pro' && s.user.squad === 'first' && s.user.rep.national > 30 && !inTransferWindow(s.day),
+    weight: () => 0.012,
+    cooldown: 250,
+    prepare: (s, rng) => {
+      const cur = club(s, s.user.clubId);
+      const bigger = s.world.clubs.filter((c) => c.reputation > (cur?.reputation ?? 40) + 6 && c.id !== s.user.clubId);
+      if (!bigger.length) return null;
+      const c = rng.pick(bigger);
+      return { club: c.name, clubId: c.id };
+    },
+    title: () => 'A quiet word',
+    text: (_s, c) => `A sporting director from ${c.club} gets your number and asks to meet — discreetly, in a hotel lobby, before the window opens. Strictly speaking, that is against the rules.`,
+    choices: [
+      {
+        label: 'Meet him',
+        hint: '++interest from them next window · risky if it leaks',
+        auto: (s) => (hasTrait(s.user, 'ambitious') ? 1.5 : 0.7),
+        apply: (s, c, rng) => {
+          s.events.flags.tappedBy = Number(c.clubId);
+          s.events.flags.tappedDay = s.day;
+          if (rng.chance(0.3)) {
+            fx(s, { coach: -10, repLocal: -6 });
+            addNotice(s, `Photos of your meeting with ${c.club} are in the papers.`, 'bad');
+            return `Somebody took a photo. "${s.user.last.toUpperCase()} IN SECRET ${String(c.club).toUpperCase()} TALKS" — your coach is furious.`;
+          }
+          return `Coffee, flattery and a plan. ${c.club} will come for you when the window opens.`;
+        },
+      },
+      {
+        label: 'Tell your club about it',
+        hint: '+coach, +fans · your club may reward your loyalty',
+        auto: 1.2,
+        apply: (s, _c, rng) => {
+          fx(s, { coach: 5, repLocal: 3 });
+          delete s.events.flags.lastImproved;
+          checkImprovedContract(s, rng);
+          return 'The chairman thanks you personally. Loyalty is noticed.';
+        },
+      },
+      {
+        label: 'Ignore the call',
+        auto: 1,
+        apply: () => 'If they want you, they know where to find you — in the window.',
+      },
+    ],
+  },
+  {
+    id: 'burglary',
+    category: 'life',
+    trigger: 'morning',
+    condition: (s) => ['house', 'villa'].includes(s.life.housing.kind) && s.user.followers > 20000,
+    weight: () => 0.003,
+    cooldown: 720,
+    title: () => 'Break-in',
+    text: () => 'You come home from an away game to a smashed patio door. Watches, jewellery and your first match shirt are gone. The police think the thieves followed your posts to know when the house was empty.',
+    choices: [
+      {
+        label: 'Install full security and stop posting live',
+        hint: '+peace of mind · costs money, fewer followers',
+        available: (s) => (s.life.money > 30000 ? true : 'Not enough money'),
+        auto: 2,
+        apply: (s) => {
+          fx(s, { money: -Math.round(25000 * city(s, s.life.cityId).cost), moneyLabel: 'Home security', home: 4, morale: -3, followers: -0.02 });
+          return 'Cameras, a gate and an alarm company on speed dial. You only post after you have left a place now.';
+        },
+      },
+      {
+        label: 'Appeal to the fans for the shirt',
+        hint: '+local reputation · −home',
+        auto: 1,
+        apply: (s, _c, rng) => {
+          fx(s, { repLocal: 3, followers: 0.02, home: -6, morale: -3 });
+          if (rng.chance(0.5)) return 'Two days later a fan finds the shirt in a charity shop and brings it to the training ground. Faith restored.';
+          return 'Thousands share your post. The shirt never turns up.';
+        },
+      },
+      {
+        label: 'Claim the insurance and move on',
+        hint: '−home, −morale',
+        auto: 0.8,
+        apply: (s) => {
+          fx(s, { home: -10, morale: -5, money: -2000, moneyLabel: 'Insurance excess' });
+          return 'Things can be replaced. The feeling of being watched takes longer to go.';
+        },
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------ the veteran years
+  {
+    id: 'mentor_youngster',
+    category: 'club',
+    trigger: 'weekly',
+    condition: (s) => hasClub(s) && s.user.squad === 'first' && userAge(s) >= 29 && s.day - (s.events.flags.mentoredYoungster ?? -9999) > 500,
+    weight: (s) => (hasTrait(s.user, 'leader') ? 0.05 : 0.025),
+    cooldown: 120,
+    prepare: (s, rng) => {
+      const kids = s.world.npcs.filter((n) => n.clubId === s.user.clubId && ageAt(n.born, s.day) < 20);
+      if (!kids.length) return null;
+      const n = rng.pick(kids);
+      return { name: `${n.first} ${n.last}`, first: n.first, pos: n.pos, age: Math.floor(ageAt(n.born, s.day)) };
+    },
+    title: () => 'The kid',
+    text: (_s, c) => `${c.name}, a ${c.age ?? 17}-year-old ${c.pos} from the academy, waits for you after training. "Everyone says you are the one to learn from. Can I do extra work with you?" You remember being him.`,
+    choices: [
+      {
+        label: 'Take him under your wing',
+        hint: '+coach, +teammates, +reputation · −energy',
+        auto: 2,
+        apply: (s, c, rng) => {
+          s.events.flags.mentoredYoungster = s.day;
+          fx(s, { coach: 5, teammates: 2, repLocal: 2, energy: -6, prof: 2, morale: 3 });
+          s.events.queue.push({ defId: 'protege_breakthrough', day: s.day + rng.int(120, 260), ctx: { name: String(c.name), first: String(c.first) } });
+          return 'Finishing drills after training, video sessions, the odd lecture about sleep. He listens to every word.';
+        },
+      },
+      {
+        label: 'Give him a few tips',
+        hint: '+coach',
+        auto: 1,
+        apply: (s) => {
+          s.events.flags.mentoredYoungster = s.day;
+          fx(s, { coach: 1 });
+          return '"Work hard, stay humble, call your mum." He writes it down.';
+        },
+      },
+      {
+        label: '"Find your own way, kid."',
+        hint: '−teammates',
+        auto: 0.2,
+        apply: (s) => {
+          fx(s, { teammates: -2 });
+          return 'He nods and walks off. You feel older than you are.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'protege_breakthrough',
+    category: 'club',
+    trigger: 'queued',
+    title: () => 'The kid made it',
+    text: (_s, c) => `${c.name} makes his first-team debut — and scores. In the post-match interview he says: "I owe a lot of this to the old man in our dressing room."`,
+    choices: [
+      {
+        label: 'Post a proud message',
+        hint: '+followers, +local reputation',
+        auto: 1.5,
+        apply: (s, c) => {
+          fx(s, { followers: 0.02, repLocal: 2, morale: 5 });
+          return `"Told you, ${c.first}. Just the beginning." The club reposts it within a minute.`;
+        },
+      },
+      {
+        label: 'Take him out for dinner',
+        hint: '+morale, +teammates',
+        auto: 1.5,
+        apply: (s) => {
+          fx(s, { morale: 6, teammates: 2, money: -Math.round(150 * city(s, s.life.cityId).cost), moneyLabel: 'Dinner' });
+          return 'He orders the cheapest thing on the menu. You order him a steak.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'international_retirement',
+    category: 'national',
+    trigger: 'weekly',
+    condition: (s) => s.user.national === 'senior' && userAge(s) >= 31 && s.user.caps >= 15 && !s.events.flags.intlRetired,
+    weight: (s) => 0.01 + Math.max(0, userAge(s) - 31) * 0.01,
+    cooldown: 250,
+    title: () => 'One last anthem?',
+    text: (s) => `${s.user.caps} caps, ${s.user.intlGoals} goals. The international breaks are getting harder on your body, and your club would love you fresh every weekend. Is it time to step away from ${nationName(s.user.nat)} duty?`,
+    choices: [
+      {
+        label: 'Retire from international football',
+        hint: 'more rest, +club coach · no more caps',
+        auto: (s) => (userAge(s) >= 34 ? 1.5 : 0.3),
+        apply: (s) => {
+          s.events.flags.intlRetired = s.day;
+          s.user.national = 'none';
+          s.life.fatigueMental = clamp(s.life.fatigueMental - 15, 0, 100);
+          fx(s, { coach: 5, morale: 2, repNat: -2, family: 5 });
+          addNotice(s, `You retired from international football after ${s.user.caps} caps.`, 'info');
+          return 'A statement, a thank-you to the fans, and the first international break with your family in years.';
+        },
+      },
+      {
+        label: '"As long as they pick me."',
+        hint: 'keep playing for your country',
+        auto: 2,
+        apply: (s) => {
+          fx(s, { repNat: 1, morale: 1 });
+          return 'The shirt means too much. You will never turn it down.';
+        },
+      },
+    ],
+  },
+  {
+    id: 'testimonial',
+    category: 'club',
+    trigger: 'weekly',
+    condition: (s) => hasClub(s) && !s.events.flags[`testimonial-${s.user.clubId}`] && s.user.history.filter((h) => h.clubId === s.user.clubId && !h.loan).length >= 10,
+    weight: () => 0.1,
+    prepare: (s) => {
+      const c = club(s, s.user.clubId);
+      return { gate: Math.round(((c?.capacity ?? 20000) * 0.8 * 18) / 1000) * 1000 };
+    },
+    title: () => 'A testimonial',
+    text: (s, c) => `Ten seasons at ${clubName(s)}. The club wants to honour you with a testimonial match next month: old teammates, a packed stadium, and gate receipts of around ${formatMoney(s, Number(c.gate))}.`,
+    choices: [
+      {
+        label: 'Give the proceeds to charity',
+        hint: '++charity, ++local reputation',
+        auto: 2,
+        apply: (s, c) => {
+          s.events.flags[`testimonial-${s.user.clubId}`] = s.day;
+          s.life.charity.donated += Number(c.gate);
+          s.life.charity.points += 15;
+          fx(s, { repLocal: 10, repNat: 3, morale: 8, family: 6, followers: 0.03 });
+          return `A full stadium, ${peopleOf(s, 'child').length ? 'your kids on the pitch at half-time' : 'your family in the directors\' box'} and a cheque for the children's hospital. You cry at the final whistle.`;
+        },
+      },
+      {
+        label: 'Keep the proceeds',
+        hint: '+money, +local reputation',
+        auto: 1,
+        apply: (s, c) => {
+          s.events.flags[`testimonial-${s.user.clubId}`] = s.day;
+          fx(s, { money: Number(c.gate), moneyLabel: 'Testimonial', repLocal: 5, morale: 6 });
+          return 'A night of old friends and new chants. And a very healthy pension pot.';
         },
       },
     ],

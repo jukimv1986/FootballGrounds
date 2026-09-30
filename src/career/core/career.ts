@@ -26,6 +26,7 @@ import { refreshNpc } from './players';
 import { applyUserMatch, isUserFixture, playDayFixtures, simulateUserMatch, userMatchContext, type UserMatchContext } from './results';
 import { retire } from './retirement';
 import { Rng, clamp } from './rng';
+import { checkMilestones } from './milestones';
 import { midSeasonCoachChanges, rolloverSeason } from './season';
 import { weeklySocial } from './social';
 import { clubSessionFor, dailyDevelopment, trainSession } from './training';
@@ -144,6 +145,7 @@ export function newCareer(input: CreatorInput, opts: NewCareerOptions): CareerSt
     nationalTeams: [],
     continentalQualified: [],
     timeline: [],
+    milestones: {},
   };
   if (state.life.housing.kind === 'family') state.life.district = 0;
   generateYouthSquad(state.world, rng, academy, day, startSeason);
@@ -362,6 +364,7 @@ function endOfDay(state: CareerState): void {
   dailyHealth(state);
   dailyLife(state, rng);
   pruneOverrides(state);
+  checkMilestones(state);
 }
 
 function startOfDay(state: CareerState): StopReason {

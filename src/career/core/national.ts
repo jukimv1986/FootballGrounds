@@ -101,6 +101,8 @@ export function evaluateCallUp(state: CareerState, rng: Rng): NationalLevel {
   const f = state.user;
   if (f.injury) return 'none';
   const age = userAge(state);
+  // retired from international football (international_retirement event)
+  if (state.events.flags.intlRetired && age >= 21) return 'none';
   const ovr = userOvr(f) + (f.form - 55) / 12 + f.rep.national / 25 + rng.gauss(0, 1.2);
   // senior: beat the 23rd best of his nationality
   const pool = nationalPool(state, f.nat);
@@ -127,9 +129,10 @@ export function internationalWindow(state: CareerState, weekMonday: number, rng:
   const tournamentYear = (state.season + 1) % 2 === 0;
   const level = evaluateCallUp(state, rng);
   const prev = f.national;
-  f.national = level === 'none' && prev === 'senior' ? (rng.chance(0.4) ? 'senior' : 'none') : level;
+  const retiredIntl = !!state.events.flags.intlRetired;
+  f.national = level === 'none' && prev === 'senior' && !retiredIntl ? (rng.chance(0.4) ? 'senior' : 'none') : level;
   if (f.national === 'none') {
-    if (prev !== 'none') addNotice(state, `Left out of the ${nationName(f.nat)} ${prev === 'senior' ? '' : prev + ' '}squad this time.`, 'bad');
+    if (prev !== 'none' && !retiredIntl) addNotice(state, `Left out of the ${nationName(f.nat)} ${prev === 'senior' ? '' : prev + ' '}squad this time.`, 'bad');
     return;
   }
   if (isJune && tournamentYear && f.national === 'senior') {

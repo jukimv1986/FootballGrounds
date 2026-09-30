@@ -104,5 +104,10 @@ export function renderInbox(app: CareerApp): HTMLElement {
         selected.actions && !selected.resolved ? h('div', { class: 'cc-row-actions' }, ...selected.actions.map((a, i) => btn(a.label, () => runAction(app, selected, a.action, a.data), i === 0 ? 'primary' : 'default'))) : selected.actions ? pill('Done', 'dim') : null,
       ], { className: 'cc-msg-detail' })
     : card('Inbox', [emptyState('No messages.')]);
-  return h('div', { class: 'cc-page' }, tabs(app, false), h('div', { class: 'cc-inbox' }, card(null, [list], { className: 'cc-msglist-card' }), detail));
+  const unread = s.inbox.filter((m) => !m.read).length;
+  const markAll = unread > 1 ? btn('Mark all as read', () => {
+    for (const m of s.inbox) m.read = true;
+    app.render();
+  }, 'ghost', { small: true, icon: 'check' }) : null;
+  return h('div', { class: 'cc-page' }, h('div', { class: 'cc-tabs-row' }, tabs(app, false), markAll), h('div', { class: 'cc-inbox' }, card(null, [list], { className: 'cc-msglist-card' }), detail));
 }

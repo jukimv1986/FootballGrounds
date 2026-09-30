@@ -3,7 +3,7 @@
 
 import { h } from '../../../ui/dom';
 import { rngOf } from '../../core/career';
-import { ROLE_NAMES, acceptOffer, negotiate, rejectOffer, roleRank } from '../../core/contracts';
+import { ROLE_NAMES, acceptOffer, agentNegotiate, negotiate, rejectOffer, roleRank } from '../../core/contracts';
 import { agent } from '../../core/life';
 import type { ContractOffer, SquadRole } from '../../core/types';
 import type { CareerApp } from '../app';
@@ -58,6 +58,12 @@ export function showNegotiation(app: CareerApp, offer: ContractOffer): void {
               }
               render(r.message, r.outcome === 'accepted' ? 'good' : 'info');
             } }, h('span', {}, 'Propose'))
+          : null,
+        pending && a && cur.note !== 'Terms agreed'
+          ? h('button', { class: 'btn', type: 'button', title: `${a.first} ${a.last} negotiates for you and settles close to what the club can pay`, onclick: () => {
+              const r = agentNegotiate(s, cur.id, rngOf(s));
+              render(r.message, r.outcome === 'accepted' ? 'good' : r.outcome === 'withdrawn' ? 'bad' : 'info');
+            } }, h('span', {}, `Let ${a.first} handle it`))
           : null,
         pending
           ? h('button', { class: 'btn btn--danger', type: 'button', onclick: () => {

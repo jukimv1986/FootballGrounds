@@ -374,7 +374,7 @@ export type TransportKind = 'bus' | 'bike' | 'used_car' | 'car' | 'sports_car' |
 export type DietKind = 'junk' | 'normal' | 'balanced' | 'nutritionist';
 export type SleepKind = 'early' | 'normal' | 'late';
 
-export type PersonRole = 'mother' | 'father' | 'sibling' | 'teammate' | 'friend' | 'partner' | 'agent' | 'mentor' | 'coach' | 'journalist';
+export type PersonRole = 'mother' | 'father' | 'sibling' | 'child' | 'teammate' | 'friend' | 'partner' | 'agent' | 'mentor' | 'coach' | 'journalist';
 export type RomanceStage = 'dating' | 'partner' | 'living' | 'engaged' | 'married';
 
 export interface Person {
@@ -428,6 +428,9 @@ export interface Property {
   district: number;
   value: number;
   boughtDay: number;
+  /** outstanding mortgage and its fixed weekly repayment (bought with a mortgage) */
+  mortgage?: number;
+  mortgageWeekly?: number;
 }
 
 export interface LedgerEntry {
@@ -685,4 +688,6 @@ export interface CareerState {
   continentalQualified: Id[];
   /** log of what happened in each slot recently (hub timeline) */
   timeline: { day: number; slot: Slot; text: string; tone?: 'good' | 'bad' | 'info' }[];
+  /** career milestones reached: key -> day (see milestones.ts; missing in old saves) */
+  milestones?: Record<string, number>;
 }

@@ -20,7 +20,8 @@
 
 /* ------------------------------------------------------------------ shell */
 
-.cc-shell { display: grid; grid-template-rows: auto 1fr auto; background: var(--bg); }
+.cc-shell { display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); background: var(--bg); }
+.cc-shell > * { min-width: 0; }
 .cc-shell-bg {
   position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background:
@@ -401,7 +402,7 @@
 
 /* ------------------------------------------------------------------ modal / events */
 
-.cc-modal { max-width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; }
+.cc-modal { max-width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
 .cc-modal.modal--wide { max-width: min(860px, calc(100vw - 32px)); }
 .cc-event-story { display: flex; gap: 14px; align-items: flex-start; }
 .cc-event-portrait { flex: none; }
@@ -558,6 +559,29 @@
 
 /* ------------------------------------------------------------------ responsive */
 
+.cc-honours li { gap: 4px 8px; }
+.cc-honours-count { font-family: var(--font-display); font-weight: 800; color: var(--gold); font-size: 13px; }
+.cc-honours-seasons { flex-basis: 100%; padding-left: 28px; }
+
+.cc-tabs-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+.cc-tabs-row .cc-subtabs { min-width: 0; }
+.cc-cell-stack { display: flex; flex-direction: column; line-height: 1.25; }
+
+/* ------------------------------------------------------------------ milestones */
+
+.cc-miles-summary { display: grid; grid-template-columns: auto 1fr minmax(160px, 320px); align-items: center; gap: 6px 14px; }
+.cc-miles-summary > strong { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--gold); letter-spacing: 0.04em; }
+.cc-miles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cc-mile { display: flex; align-items: flex-start; gap: 10px; padding: 7px 10px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.03); border: 1px solid transparent; opacity: 0.55; }
+.cc-mile.is-got { opacity: 1; background: rgba(255, 255, 255, 0.06); border-color: var(--line); }
+.cc-mile-medal { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 800; background: rgba(255, 255, 255, 0.08); color: var(--text-faint); }
+.cc-mile.is-got.cc-mile--t1 .cc-mile-medal { background: #8a5a32; color: #fbe3cf; }
+.cc-mile.is-got.cc-mile--t2 .cc-mile-medal { background: #9aa7b4; color: #1d252d; }
+.cc-mile.is-got.cc-mile--t3 .cc-mile-medal { background: var(--gold); color: #2a1f04; box-shadow: 0 0 12px rgba(255, 200, 60, 0.35); }
+.cc-mile-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.cc-mile-text strong { font-family: var(--font-display); font-weight: 800; font-size: 14px; letter-spacing: 0.04em; }
+.cc-legacy-miles { gap: 6px; }
+
 @media (max-width: 1180px) {
   .cc-top-meters { grid-template-columns: repeat(2, minmax(80px, 110px)); }
   .cc-grid--city { grid-template-columns: 1fr; }
@@ -599,6 +623,8 @@
   .cc-bar-actions .btn { flex: 1; padding: 0 8px; min-width: 0; }
   .cc-bar-actions .btn--primary { min-width: 0; flex: 1.3; }
   .cc-bar-actions .btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cc-bar-actions .btn--ghost { font-size: 13px; letter-spacing: 0.04em; padding: 0 6px; gap: 0; }
+  .cc-bar-actions .btn--ghost .icon { display: none; }
   .cc-slot { grid-template-columns: 1fr; gap: 4px; }
   .cc-plan-row { grid-template-columns: 1fr; }
   .cc-card { padding: 14px; }
@@ -609,14 +635,30 @@
   .cc-profile-head .cc-avatar { width: 88px; height: 103px; }
   .cc-stat { grid-template-columns: minmax(86px, 104px) 1fr 26px 36px; gap: 6px; }
   .cc-posgrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .cc-range-row { grid-template-columns: 1fr; gap: 4px; }
-  .cc-range-value { text-align: left; }
+  .cc-range-row { grid-template-columns: 1fr auto; gap: 2px 8px; }
+  .cc-range-row > span { grid-column: 1; grid-row: 1; }
+  .cc-range-row > output { grid-column: 2; grid-row: 1; text-align: right; }
+  .cc-range-row > input, .cc-range-row > select { grid-column: 1 / -1; grid-row: 2; }
+  .cc-range-value { text-align: right; }
   .cc-event-story { flex-direction: column; align-items: center; text-align: center; }
   .cc-session-week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .cc-venues { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cc-city-hero { min-height: 160px; padding: 16px; }
   .cc-ev { grid-template-columns: 32px 20px 1fr; }
   .cc-ev-team { display: none; }
+  .cc-miles-summary { grid-template-columns: auto 1fr; }
+  /* creator: the step dots get their own row so the step title is never cut off */
+  .screen--career-creator .screen-header { flex-wrap: wrap; row-gap: 6px; }
+  .screen--career-creator .screen-titles { flex: 1 1 0; min-width: 0; }
+  .screen--career-creator .stepper { order: 3; flex: 1 1 100%; margin: 0; justify-content: flex-end; }
+  .cc-week { grid-template-columns: repeat(7, minmax(210px, 74%)); scroll-snap-type: x mandatory; }
+  .cc-week-day { scroll-snap-align: start; }
+  .cc-week-content .cc-select { font-size: 13px; }
+  .cc-club-option { flex-wrap: wrap; }
+  .cc-club-option-main { flex: 1 1 calc(100% - 60px); }
+  .cc-club-option-main strong { white-space: normal; }
+  .cc-club-option-stars { flex: 1 1 100%; grid-template-columns: auto auto auto auto; justify-content: start; padding-left: 50px; }
+  .cc-miles-summary .cc-meter { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

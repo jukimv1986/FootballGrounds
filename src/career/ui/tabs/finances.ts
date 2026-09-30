@@ -5,7 +5,7 @@ import { h } from '../../../ui/dom';
 import { formatDate } from '../../core/dates';
 import { COURSES, DIETS, HOBBIES, INVESTMENTS, SLEEP, TRANSPORT } from '../../core/data/lifestyle';
 import { city } from '../../core/index';
-import { FOUNDATION_COST, buyHobby, buyTransport, donate, enrollCourse, housingDef, housingOptions, invest, livesIn, moveHouse, propertyRent, netWeeklyWage, sellProperty, startFoundation, weeklyCosts, withdraw } from '../../core/life';
+import { FOUNDATION_COST, MORTGAGE_DEPOSIT, mortgageBlocked, mortgagePayment, buyHobby, buyTransport, donate, enrollCourse, housingDef, housingOptions, invest, livesIn, moveHouse, propertyRent, netWeeklyWage, sellProperty, startFoundation, weeklyCosts, withdraw } from '../../core/life';
 import { userAge } from '../../core/footballer';
 import type { CareerApp } from '../app';
 import { btn, card, emptyState, keyValue, money, pill, table } from '../components';
@@ -36,7 +36,7 @@ export function renderFinances(app: CareerApp): HTMLElement {
         keyValue([['Rent', life.housing.owned ? 'Owned' : life.housing.weekly ? `${cur(life.housing.weekly)}/week` : 'Free'], ['Comfort', `${current.comfort}/100`], ['Since', formatDate(life.housing.since)]]),
       ]),
       card('Housing market', [
-        h('p', { class: 'cc-dim' }, 'Comfort improves sleep and home happiness; prestigious districts cost more but impress. Buying needs the full price; property keeps its value.'),
+        h('p', { class: 'cc-dim' }, `Comfort improves sleep and home happiness; prestigious districts cost more but impress. Buy outright, or with a mortgage: a ${Math.round(MORTGAGE_DEPOSIT * 100)}% deposit and weekly repayments over 15 years (a professional contract needed). Property keeps its value.`),
         ...kinds.map((k) => {
           const list = opts.filter((o) => o.kind === k);
           if (!list.length) return null;
@@ -62,11 +62,16 @@ export function renderFinances(app: CareerApp): HTMLElement {
                       app.toast(err ?? `Moved into ${o.name}`, err ? 'warn' : 'success');
                       app.render();
                     }, 'ghost', { small: true, disabled: o.blocked ?? false }),
-                    !here && o.price ? btn('Buy', () => {
+                    !here && o.price && life.money >= o.price ? btn('Buy', () => {
                       const err = moveHouse(s, o, true);
                       app.toast(err ?? `You bought a ${o.name.toLowerCase()}!`, err ? 'warn' : 'success');
                       app.render();
                     }, 'ghost', { small: true, disabled: o.blocked ?? (life.money < o.price ? 'Not enough money' : false) }) : null,
+                    !here && o.price && life.money < o.price ? btn('Mortgage', () => {
+                      const err = moveHouse(s, o, true, true);
+                      app.toast(err ?? `Keys in hand! Mortgage repayments: ${cur(mortgagePayment(o.price - Math.round(o.price * MORTGAGE_DEPOSIT)))}/week`, err ? 'warn' : 'success');
+                      app.render();
+                    }, 'ghost', { small: true, disabled: o.blocked ?? mortgageBlocked(s, o) ?? false, title: (o.blocked ?? mortgageBlocked(s, o)) ?? `${Math.round(MORTGAGE_DEPOSIT * 100)}% deposit (${cur(Math.round(o.price * MORTGAGE_DEPOSIT))}), then ${cur(mortgagePayment(o.price - Math.round(o.price * MORTGAGE_DEPOSIT)))}/week for 15 years` }) : null,
                   ),
                 ];
               }),
@@ -74,7 +79,7 @@ export function renderFinances(app: CareerApp): HTMLElement {
           );
         }),
       ]),
-      card('Your property', life.properties.length ? [table(['Home', 'City', 'Value', 'Use', ''], life.properties.map((p, i) => [housingDef(p.kind).name, city(s, p.cityId).name, cur(p.value), livesIn(s, p) ? 'Your home' : `Let out · ${cur(propertyRent(p))}/month`, livesIn(s, p) ? '' : btn('Sell', () => (app.toast(`Sold for ${cur(sellProperty(s, i))}`, 'success'), app.render()), 'ghost', { small: true })])), h('p', { class: 'cc-dim cc-small' }, 'Homes you own but do not live in are let out. Property values follow the market.')] : [emptyState('You do not own property yet. Buying instead of renting builds wealth — and a let-out home pays rent.')]),
+      card('Your property', life.properties.length ? [table(['Home', 'City', 'Value', 'Use', ''], life.properties.map((p, i) => [housingDef(p.kind).name, city(s, p.cityId).name, cur(p.value), h('span', { class: 'cc-cell-stack' }, h('span', {}, livesIn(s, p) ? 'Your home' : `Let out · ${cur(propertyRent(p))}/month`), p.mortgage ? h('span', { class: 'cc-dim cc-small' }, `Mortgage: ${cur(p.mortgage)} left · ${cur(p.mortgageWeekly ?? 0)}/wk`) : null), livesIn(s, p) ? '' : btn('Sell', () => (app.toast(`Sold for ${cur(sellProperty(s, i))}`, 'success'), app.render()), 'ghost', { small: true })])), h('p', { class: 'cc-dim cc-small' }, 'Homes you own but do not live in are let out. Property values follow the market.')] : [emptyState('You do not own property yet. Buying instead of renting builds wealth — and a let-out home pays rent.')]),
       card('Transport', [
         h('p', { class: 'cc-dim' }, 'Better transport makes the commute less tiring. Your old vehicle is traded in.'),
         table(
@@ -186,7 +191,7 @@ export function renderFinances(app: CareerApp): HTMLElement {
         table(['Expenses', 'Per week'], [...costs.map((c) => [c.label, `−${cur(c.amount)}`]), [h('strong', {}, 'Total'), h('strong', {}, `−${cur(totalCosts)}`)]]),
         h('p', { class: w.net + sponsors / 4.3 - totalCosts >= 0 ? 'cc-good' : 'cc-bad' }, `Net per week: ${cur(Math.round(w.net + sponsors / 4.3 - totalCosts))}`),
       ]),
-      card('Sponsors', life.sponsors.length ? [table(['Brand', 'Per month', 'Duties', 'Until'], life.sponsors.map((x) => [`${x.brand} (${x.category})`, cur(x.monthly), `${x.dutiesDone}/${x.duties} this month`, formatDate(x.endDay)]))] : [emptyState('No sponsors yet. Fame brings offers.')]),
+      card('Sponsors', life.sponsors.length ? [table(['Brand', 'Per month', 'Duties', 'Until'], life.sponsors.map((x) => [h('span', { class: 'cc-cell-stack' }, h('strong', {}, x.brand), h('span', { class: 'cc-dim cc-small' }, x.category)), cur(x.monthly), `${x.dutiesDone}/${x.duties}`, formatDate(x.endDay)])), h('p', { class: 'cc-dim cc-small' }, 'Duties: promotional evenings this month (Agent Office → Sponsor appearance). Skipped duties cut the payment.')] : [emptyState('No sponsors yet. Fame brings offers.')]),
       card('Recent transactions', life.ledger.length ? [table(['Date', 'What', 'Amount'], life.ledger.slice(0, 30).map((l) => [formatDate(l.day), l.label, h('span', { class: l.amount >= 0 ? 'cc-good' : 'cc-bad' }, `${l.amount >= 0 ? '+' : ''}${cur(l.amount)}`)]))] : [emptyState('No transactions yet.')]),
     );
   }

@@ -4,8 +4,9 @@
 //
 // Module map:
 //   core/      pure simulation (no DOM): world generation, calendar & competitions, match
-//              simulation, coach AI, training & development, life, events, contracts, national
-//              teams, seasons, retirement, save/load. Deterministic per career seed.
+//              simulation, coach AI, training & development, life (housing incl. mortgages,
+//              family & children, friends, romance, money), events, contracts & agents, national
+//              teams, seasons, milestones, retirement, save/load. Deterministic per career seed.
 //   engine/    bridge to the 3D engine: DB registration, kit textures, PLAY flow.
 //   ui/        DOM screens (router screens + in-shell tabs), styles in career.css.
 //

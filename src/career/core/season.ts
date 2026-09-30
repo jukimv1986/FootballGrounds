@@ -170,7 +170,12 @@ export function rolloverSeason(state: CareerState, rng: Rng): void {
       state.world.clubs[id].reputation = clamp(state.world.clubs[id].reputation - 6, 0, 99);
     }
     if (u.clubId >= 0 && up.includes(u.clubId) && u.season.league.apps >= 5) {
-      trophies.push(`Promotion from ${second.name}`);
+      // promotion counts as an honour unless he already has the second-tier title for it (the
+      // trophies above were already copied into the career list: record it there too)
+      if (!trophies.includes(`${second.name} champion`)) {
+        trophies.push(`Promotion from ${second.name}`);
+        u.trophies.push({ season, name: `Promotion from ${second.name}`, clubName: userClub?.name ?? '' });
+      }
       addNotice(state, `Promoted to the ${top.name}!`, 'gold');
     }
     if (u.clubId >= 0 && down.includes(u.clubId)) addNotice(state, `Relegated to the ${second.name}…`, 'bad');
@@ -255,6 +260,7 @@ export function replaceCoach(state: CareerState, clubId: Id, rng: Rng, reason: s
     addNotice(state, `${c.name} have appointed a new coach: ${coach.first} ${coach.last} (${reason}).`, 'info');
     addMessage(state, { from: c.name, kind: 'club', subject: 'New head coach', body: `${old ? `${old.first} ${old.last} has left the club. ` : ''}${coach.first} ${coach.last} takes charge. Style: ${coach.style}, favoured formation ${coach.formation}. Everyone starts from zero — impress him.` });
     refreshClubPeople(state, rng);
+    state.events.queue.push({ defId: 'new_coach', day: state.day + 1, ctx: { coach: `${coach.first} ${coach.last}`, style: coach.style, formation: coach.formation, youthFaith: Math.round(coach.youthFaith * 100) } });
   }
 }
 

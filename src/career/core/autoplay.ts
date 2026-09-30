@@ -3,13 +3,13 @@
 // adapted to energy, simulate every match, accept good contracts and step-up transfers, upgrade
 // housing and diet as wages grow, and retire in his mid/late thirties when the legs go.
 
-import { acceptOffer, clubValuation, negotiate, rejectOffer, roleRank } from './contracts';
+import { acceptOffer, agentNegotiate, clubValuation, negotiate, rejectOffer, roleRank } from './contracts';
 import { advanceSlot, rngOf, simulatePendingMatch, type StopReason } from './career';
 import { ageAt } from './dates';
 import { autoResolve } from './events';
 import { userAge, userOvr } from './footballer';
 import { club } from './index';
-import { enrollCourse, housingOptions, moveHouse, buyTransport, invest } from './life';
+import { agent, enrollCourse, housingOptions, moveHouse, buyTransport, invest } from './life';
 import { acceptSponsor } from './social';
 import { bestTrainingFocus } from './training';
 import type { CareerState } from './types';
@@ -32,8 +32,9 @@ function handleOffers(state: CareerState): void {
     else if (o.kind === 'loan') take = userAge(state) < 22;
     else if (o.kind === 'transfer') take = !cur || c.reputation >= cur.reputation + 6 || (o.wage > u.contract.wage * 1.6 && c.reputation >= cur.reputation - 4);
     if (take && o.kind !== 'loan' && o.kind !== 'youth' && o.rounds === 0) {
-      // a little haggling
-      negotiate(state, o.id, { wage: Math.round(o.wage * 1.08), years: o.years, role: o.role, releaseClause: o.releaseClause, signingBonus: o.signingBonus });
+      // the agent handles the talks; without one, a little haggling
+      if (agent(state)) agentNegotiate(state, o.id, rng);
+      else negotiate(state, o.id, { wage: Math.round(o.wage * 1.08), years: o.years, role: o.role, releaseClause: o.releaseClause, signingBonus: o.signingBonus });
       if (o.status !== 'pending') continue;
     }
     if (take) acceptOffer(state, o.id, rng);
@@ -74,6 +75,11 @@ function lifestyle(state: CareerState): void {
     const opt = housingOptions(state).find((o) => o.kind === 'house' && !o.blocked);
     if (opt) moveHouse(state, opt, life.money > opt.price * 1.5);
   }
+  // get on the property ladder with a mortgage once the wage allows it
+  if (life.housing.kind === 'apartment' && !life.housing.owned && wage > 8000 && life.properties.length === 0) {
+    const opt = housingOptions(state).find((o) => o.kind === 'apartment' && o.district === life.district && !o.blocked);
+    if (opt) moveHouse(state, opt, true, true);
+  }
   if (age >= 18.5 && life.transport === 'bus' && life.money > 12000) buyTransport(state, 'used_car');
   if (life.transport === 'used_car' && life.money > 90000) buyTransport(state, 'car');
   if (life.money > 400000 && life.investments.length === 0) invest(state, 'index', Math.round(life.money * 0.3));
@@ -90,7 +96,7 @@ function lifestyle(state: CareerState): void {
   const extra = `extra_training:${focus2}`;
   life.plan = [
     [null, tired ? 'rest' : extra, 'call_family'],
-    [null, 'rest', life.education.enrolled ? 'study' : 'gaming'],
+    [null, 'rest', life.education.enrolled ? 'study' : state.life.people.some((p) => p.role === 'child' && !p.gone) ? 'family_time' : 'gaming'],
     [null, tired ? 'yoga' : `extra_training:${focus}`, 'rest'],
     [null, study, 'coffee_friends'],
     [null, 'rest', 'early_night'],

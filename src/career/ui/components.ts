@@ -305,3 +305,28 @@ export function sectionTitle(text: string, extra?: Node | null): HTMLElement {
 export function keyValue(rows: [string, Child][]): HTMLElement {
   return h('dl', { class: 'cc-kv' }, ...rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
 }
+
+/** trophies / awards grouped by name: "Golden Boot ×3 · 2031/32, 2032/33, 2035/36" (long careers stay readable) */
+export function honoursList(items: { name: string; season: number }[], icon: string, label: (season: number) => string): HTMLElement {
+  const groups = new Map<string, number[]>();
+  for (const it of items) {
+    const list = groups.get(it.name);
+    if (list) list.push(it.season);
+    else groups.set(it.name, [it.season]);
+  }
+  const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[1][0] - b[1][0]);
+  return h(
+    'ul',
+    { class: 'cc-list cc-honours' },
+    ...sorted.map(([name, seasons]) =>
+      h(
+        'li',
+        {},
+        h('span', { class: 'cc-trophy', 'aria-hidden': 'true' }, icon),
+        h('strong', {}, name),
+        seasons.length > 1 ? h('span', { class: 'cc-honours-count' }, `×${seasons.length}`) : null,
+        h('span', { class: 'cc-dim cc-small cc-honours-seasons' }, seasons.map(label).join(', ')),
+      ),
+    ),
+  );
+}

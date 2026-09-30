@@ -5,6 +5,8 @@
 import { nationName } from './data/geography';
 import { fullName, userAge, userOvr } from './footballer';
 import { addTimeline } from './messages';
+import { netWorth } from './life';
+import { milestoneCount, milestonePoints } from './milestones';
 import { avgRating, emptyLine } from './players';
 import type { CareerState, Legacy, StatLine } from './types';
 
@@ -26,6 +28,8 @@ export interface HallOfFameEntry {
   retiredAge: number;
   clubs: string[];
   finishedAt: number;
+  /** milestones reached (entries from older versions lack it) */
+  milestones?: number;
 }
 
 export function careerTotals(state: CareerState): StatLine {
@@ -42,7 +46,7 @@ export function peakOvr(state: CareerState): number {
 export function legacyScore(state: CareerState): number {
   const u = state.user;
   const t = careerTotals(state);
-  const score = t.apps * 0.6 + t.goals * 1.6 + t.assists * 0.8 + u.caps * 2 + u.intlGoals * 3 + u.trophies.length * 25 + u.awards.length * 18 + Math.max(0, peakOvr(state) - 60) * 12 + u.rep.world * 2 + state.life.charity.points * 0.5;
+  const score = t.apps * 0.6 + t.goals * 1.6 + t.assists * 0.8 + u.caps * 2 + u.intlGoals * 3 + u.trophies.length * 25 + u.awards.length * 18 + Math.max(0, peakOvr(state) - 60) * 12 + u.rep.world * 2 + state.life.charity.points * 0.5 + milestonePoints(state) * 0.5;
   return Math.round(score);
 }
 
@@ -50,7 +54,7 @@ export function legacyScore(state: CareerState): number {
 export function nextChapter(state: CareerState): { next: string; detail: string } {
   const edu = state.life.education.completed;
   const u = state.user;
-  const money = state.life.money + state.life.investments.reduce((a, i) => a + i.amount, 0) + state.life.properties.reduce((a, p) => a + p.value, 0);
+  const money = netWorth(state);
   const clubCounts = new Map<string, number>();
   for (const h of u.history) clubCounts.set(h.clubName, (clubCounts.get(h.clubName) ?? 0) + h.league.apps);
   const [legendClub, legendApps] = [...clubCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
@@ -99,6 +103,7 @@ export function hallOfFameEntry(state: CareerState): HallOfFameEntry {
     retiredAge: state.retired?.age ?? Math.floor(userAge(state)),
     clubs,
     finishedAt: Date.now(),
+    milestones: milestoneCount(state).got,
   };
 }
 

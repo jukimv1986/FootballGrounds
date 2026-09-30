@@ -48,8 +48,16 @@ export function unreadCount(state: CareerState): number {
   return state.inbox.filter((m) => !m.read).length;
 }
 
+/**
+ * Money is shown in one currency for the whole career — the player's home country's (his bank
+ * account does not change currency when he moves abroad) — or euros when his nation has no league.
+ */
+export function careerCurrency(state: CareerState, fallback = '€'): string {
+  return state.world.countries.find((x) => x.key === state.user.nat)?.currency ?? fallback;
+}
+
 export function formatMoney(state: CareerState | null, v: number, currency = '€'): string {
-  const c = state ? (state.world.countries.find((x) => x.key === state.world.clubs[state.user.clubId]?.countryKey)?.currency ?? currency) : currency;
+  const c = state ? careerCurrency(state, currency) : currency;
   const sign = v < 0 ? '-' : '';
   const a = Math.abs(v);
   if (a >= 1e6) return `${sign}${c}${(a / 1e6).toFixed(a >= 1e7 ? 1 : 2)}M`;

@@ -9,14 +9,15 @@ import { TRAITS, fullName, potentialRange, userAge, userOvr } from '../../core/f
 import { nationName } from '../../core/data/geography';
 import { avgRating } from '../../core/players';
 import { careerTotals } from '../../core/retirement';
+import { MILESTONES, MILESTONE_CATEGORY_NAMES, milestoneCount, milestonePoints, milestonesOf, type MilestoneCategory } from '../../core/milestones';
 import { naturalCap } from '../../core/training';
 import type { StatLine } from '../../core/types';
 import type { CareerApp } from '../app';
-import { avatar, card, emptyState, followers, keyValue, meter, money, ovrBadge, pill, statBar, table } from '../components';
+import { avatar, card, emptyState, followers, honoursList, keyValue, meter, money, ovrBadge, pill, statBar, table } from '../components';
 
 function tabs(app: CareerApp, current: string): HTMLElement {
   const mk = (key: string, label: string) => h('button', { class: `tab ${current === key ? 'is-active' : ''}`, type: 'button', onclick: () => app.setSub(key) }, label);
-  return h('div', { class: 'tabs cc-subtabs' }, mk('attributes', 'Attributes'), mk('season', 'This season'), mk('history', 'Career'), mk('honours', 'Honours'));
+  return h('div', { class: 'tabs cc-subtabs' }, mk('attributes', 'Attributes'), mk('season', 'This season'), mk('history', 'Career'), mk('honours', 'Honours'), mk('milestones', 'Milestones'));
 }
 
 function lineRow(name: string, l: StatLine): (string | number)[] {
@@ -84,12 +85,40 @@ export function renderProfile(app: CareerApp): HTMLElement {
       ], { className: 'cc-span-all' }),
       card('Career totals', [keyValue([['Appearances', String(totals.apps)], ['Goals', String(totals.goals)], ['Assists', String(totals.assists)], ['Average rating', totals.rated ? avgRating(totals).toFixed(2) : '—'], ['Senior caps', String(u.caps)], ['International goals', String(u.intlGoals)]])]),
     );
+  } else if (sub === 'milestones') {
+    const got = milestonesOf(s);
+    const count = milestoneCount(s);
+    const cats = Object.keys(MILESTONE_CATEGORY_NAMES) as MilestoneCategory[];
+    body = h(
+      'div',
+      { class: 'cc-grid' },
+      card(null, [h('div', { class: 'cc-miles-summary' }, h('strong', {}, `${count.got} / ${count.total}`), h('span', { class: 'cc-dim' }, `milestones reached · ${milestonePoints(s)} legacy points`), meter('Progress', (count.got / count.total) * 100, { compact: true, tone: 'gold' }))], { className: 'cc-span-all' }),
+      ...cats.map((cat) => {
+        const list = MILESTONES.filter((m) => m.category === cat).sort((a, b) => Number(got[b.key] !== undefined) - Number(got[a.key] !== undefined) || a.tier - b.tier);
+        const n = list.filter((m) => got[m.key] !== undefined).length;
+        return card(`${MILESTONE_CATEGORY_NAMES[cat]} · ${n}/${list.length}`, [
+          h(
+            'ul',
+            { class: 'cc-miles' },
+            ...list.map((m) => {
+              const day = got[m.key];
+              return h(
+                'li',
+                { class: `cc-mile cc-mile--t${m.tier} ${day !== undefined ? 'is-got' : ''}`, title: m.desc },
+                h('span', { class: 'cc-mile-medal', 'aria-hidden': 'true' }, day !== undefined ? '★' : '·'),
+                h('span', { class: 'cc-mile-text' }, h('strong', {}, m.name), h('span', { class: 'cc-dim cc-small' }, day !== undefined ? `${m.desc} · ${formatDate(day)}` : m.desc)),
+              );
+            }),
+          ),
+        ]);
+      }),
+    );
   } else if (sub === 'honours') {
     body = h(
       'div',
       { class: 'cc-grid cc-grid--2' },
-      card('Trophies', [u.trophies.length ? h('ul', { class: 'cc-list cc-trophies' }, ...u.trophies.map((t) => h('li', {}, h('span', { class: 'cc-trophy' }, '🏆'), h('strong', {}, t.name), h('span', { class: 'cc-dim' }, ` · ${seasonLabel(t.season)} · ${t.clubName}`)))) : emptyState('No trophies yet. Go and win something!')]),
-      card('Awards', [u.awards.length ? h('ul', { class: 'cc-list' }, ...u.awards.map((a) => h('li', {}, h('span', { class: 'cc-trophy' }, '★'), h('strong', {}, a.name), h('span', { class: 'cc-dim' }, ` · ${seasonLabel(a.season)}`)))) : emptyState('No individual awards yet.')]),
+      card(`Trophies${u.trophies.length ? ` · ${u.trophies.length}` : ''}`, [u.trophies.length ? honoursList(u.trophies, '🏆', seasonLabel) : emptyState('No trophies yet. Go and win something!')]),
+      card(`Awards${u.awards.length ? ` · ${u.awards.length}` : ''}`, [u.awards.length ? honoursList(u.awards, '★', seasonLabel) : emptyState('No individual awards yet.')]),
       card('Reputation', [meter('Local', u.rep.local, { tone: 'gold' }), meter('National', u.rep.national, { tone: 'gold' }), meter('World', u.rep.world, { tone: 'gold' }), keyValue([['Followers', followers(u.followers)], ['International', u.national === 'none' ? 'Not selected' : `${nationName(u.nat)} ${u.national === 'senior' ? '' : u.national}`], ['Senior caps', String(u.caps)]])]),
       card('Injury record', [u.injuryHistory.length ? h('ul', { class: 'cc-list' }, ...u.injuryHistory.slice(0, 10).map((i) => h('li', {}, h('span', { class: 'cc-list-date' }, formatDate(i.day)), `${i.name} (${i.days} days)`))) : emptyState('Clean bill of health.')]),
     );

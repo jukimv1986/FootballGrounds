@@ -211,7 +211,7 @@ export interface ActivityDef {
     | 'fan_event'
     | 'shopping';
   /** requirement tag checked in life.ts */
-  requires?: 'injured' | 'fit' | 'partner' | 'dating' | 'agent' | 'enrolled' | 'student' | 'house' | 'fame' | 'sponsor' | 'adult' | 'hobby' | 'hometown' | 'away';
+  requires?: 'injured' | 'fit' | 'partner' | 'dating' | 'agent' | 'enrolled' | 'student' | 'house' | 'fame' | 'sponsor' | 'adult' | 'hobby' | 'hometown' | 'away' | 'kids';
 }
 
 export const ACTIVITIES: ActivityDef[] = [
@@ -226,6 +226,7 @@ export const ACTIVITIES: ActivityDef[] = [
   { key: 'social_post', name: 'Post on social media', venue: 'home', desc: 'Share a moment with your followers.', slots: [0, 1, 2], cost: 0, effects: { energy: 1 }, special: 'post' },
   { key: 'hobby', name: 'Practise your hobby', venue: 'home', desc: 'Guitar, chess, painting — whatever keeps you sane.', slots: [1, 2], cost: 5, effects: { energy: 2, morale: 2, relax: 10 }, special: 'hobby', requires: 'hobby' },
   { key: 'host_party', name: 'Host a party', venue: 'home', desc: 'Your place, your playlist, your neighbours\' complaints.', slots: [2], cost: 400, effects: { energy: 18, social: 12, morale: 4, professionalism: -1.5, sleepPenalty: 0.75, teammates: 3, followers: 0.002 }, special: 'party', requires: 'house' },
+  { key: 'family_time', name: 'Time with the kids', venue: 'home', desc: 'Building blocks, cartoons, bath time and one more bedtime story.', slots: [1, 2], cost: 10, effects: { energy: 4, family: 10, morale: 3, relax: 9, romance: 2 }, requires: 'kids' },
   { key: 'partner_night', name: 'Quiet night with your partner', venue: 'home', desc: 'Dinner, a series and each other.', slots: [2], cost: 20, effects: { energy: -6, romance: 8, morale: 2, relax: 8 }, special: 'partner_time', requires: 'partner' },
 
   // family

@@ -10,7 +10,7 @@ import { nationName } from '../../core/data/geography';
 import { city } from '../../core/index';
 import { activityBlocked, activityCost, housingDef, setOverride, venuesIn } from '../../core/life';
 import type { CareerApp } from '../app';
-import { card, money, pill } from '../components';
+import { btn, card, money, pill } from '../components';
 import { activityOptions } from '../pickers';
 
 const EFFECT_LABELS: [keyof ActivityDef['effects'], string][] = [
@@ -86,7 +86,8 @@ export function renderCity(app: CareerApp): HTMLElement {
   const districtCard = card('Your district', [
     h('p', {}, h('strong', {}, district.name), ` — ${district.blurb}`),
     h('div', { class: 'cc-pills' }, pill(`${district.commute} min to training`, district.commute > 28 ? 'warn' : 'good'), pill(`Nightlife ${Math.round(district.fun * 10)}/10`, 'dim'), pill(`Calm ${Math.round(district.calm * 10)}/10`, 'dim'), pill(`Prestige ${Math.round(district.prestige * 10)}/10`, 'dim')),
-    h('p', { class: 'cc-dim' }, 'Move house on the Money & Home page. Calm districts help you sleep; lively ones feed your social life.'),
+    h('p', { class: 'cc-dim' }, 'Calm districts help you sleep; lively ones feed your social life.'),
+    btn('Find a new home', () => app.go('finances', 'home'), 'ghost', { small: true, icon: 'home' }),
   ]);
 
   const grid = h(

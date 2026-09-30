@@ -6,14 +6,14 @@ import { slotInfo } from '../../core/career';
 import { agentOptions, clubValuation, fireAgent, hireAgent } from '../../core/contracts';
 import type { Slot } from '../../core/dates';
 import { activityDef } from '../../core/data/lifestyle';
-import { activityBlocked, peopleOf, setOverride } from '../../core/life';
+import { activityBlocked, isFamily, peopleOf, setOverride } from '../../core/life';
 import { coachOpinion } from '../../core/selection';
 import { coachOf } from '../../core/index';
 import type { CareerState, Person, PersonRole } from '../../core/types';
 import type { CareerApp } from '../app';
 import { btn, card, emptyState, meter, pill } from '../components';
 
-const ROLE_LABEL: Record<PersonRole, string> = { mother: 'Mum', father: 'Dad', sibling: 'Sibling', teammate: 'Teammate', friend: 'Friend', partner: 'Partner', agent: 'Agent', mentor: 'Mentor', coach: 'Coach', journalist: 'Journalist' };
+const ROLE_LABEL: Record<PersonRole, string> = { mother: 'Mum', father: 'Dad', sibling: 'Sibling', child: 'Child', teammate: 'Teammate', friend: 'Friend', partner: 'Partner', agent: 'Agent', mentor: 'Mentor', coach: 'Coach', journalist: 'Journalist' };
 const STAGE_LABEL: Record<string, string> = { dating: 'Dating', partner: 'In a relationship', living: 'Living together', engaged: 'Engaged', married: 'Married' };
 
 /** plans an activity in the next free slot where it is possible */
@@ -36,6 +36,12 @@ export function planNext(app: CareerApp, key: string): void {
   app.toast(`No free slot for "${def.name}" in the next days`, 'warn');
 }
 
+function childAge(days: number): string {
+  if (days < 60) return `${Math.max(1, Math.round(days / 7))} weeks old`;
+  if (days < 730) return `${Math.floor(days / 30.4)} months old`;
+  return `${Math.floor(days / 365.25)} years old`;
+}
+
 function initials(p: Person): string {
   return `${p.first.charAt(0)}${p.last.charAt(0)}`.toUpperCase();
 }
@@ -51,7 +57,7 @@ function personCard(app: CareerApp, p: Person, actions: HTMLElement[]): HTMLElem
       'div',
       { class: 'cc-person-main' },
       h('div', { class: 'cc-person-head' }, h('strong', {}, `${p.first} ${p.last}`), pill(p.stage ? STAGE_LABEL[p.stage] : ROLE_LABEL[p.role], p.role === 'partner' ? 'gold' : 'dim')),
-      p.job ? h('span', { class: 'cc-dim' }, p.job) : null,
+      p.job ? h('span', { class: 'cc-dim' }, p.role === 'child' ? `Your ${p.job} · ${childAge(s.day - p.since)}` : p.job) : null,
       meter('Relationship', p.affinity, { compact: true }),
       h('span', { class: 'cc-dim cc-small' }, since <= 0 ? 'Seen today' : `Last contact ${since} day${since > 1 ? 's' : ''} ago`),
       actions.length ? h('div', { class: 'cc-row-actions' }, ...actions) : null,
@@ -71,7 +77,7 @@ function coachSummary(state: CareerState): string {
 
 export function renderPeople(app: CareerApp): HTMLElement {
   const s = app.state;
-  const family = s.life.people.filter((p) => !p.gone && (p.role === 'mother' || p.role === 'father' || p.role === 'sibling'));
+  const family = s.life.people.filter((p) => !p.gone && isFamily(p)).sort((a, b) => Number(b.role === 'child') - Number(a.role === 'child'));
   const partner = peopleOf(s, 'partner');
   const friends = peopleOf(s, 'friend');
   const mates = peopleOf(s, 'teammate');
@@ -80,7 +86,7 @@ export function renderPeople(app: CareerApp): HTMLElement {
   const mentors = peopleOf(s, 'mentor');
   const away = s.life.cityId !== s.life.hometown;
 
-  const familyCard = card('Family', family.map((p) => personCard(app, p, [btn('Call', () => planNext(app, 'call_family'), 'ghost', { small: true }), btn(away ? 'Trip home' : 'Visit', () => planNext(app, away ? 'trip_home' : 'visit_family'), 'ghost', { small: true })])));
+  const familyCard = card('Family', family.map((p) => personCard(app, p, p.role === 'child' ? [btn('Time together', () => planNext(app, 'family_time'), 'ghost', { small: true })] : [btn('Call', () => planNext(app, 'call_family'), 'ghost', { small: true }), btn(away ? 'Trip home' : 'Visit', () => planNext(app, away ? 'trip_home' : 'visit_family'), 'ghost', { small: true })])));
   const romanceCard = card(
     'Love life',
     !s.settings.romance

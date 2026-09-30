@@ -111,5 +111,11 @@ export function showEventDialog(app: CareerApp): void {
     app.render();
     // another event may be queued for right now
     if (s.events.pending) setTimeout(() => showEventDialog(app), 200);
+    // keyboard / gamepad players land on "Continue" again (the re-render dropped the focus)
+    else
+      requestAnimationFrame(() => {
+        const a = document.activeElement;
+        if (!a || a === document.body || !a.isConnected) document.querySelector<HTMLElement>('.cc-bar [data-nav-default]')?.focus({ preventScroll: true });
+      });
   }
 }

@@ -53,7 +53,7 @@ export const TRAITS: { key: TraitKey; name: string; desc: string; excludes?: Tra
 ];
 
 export const TALENTS: { key: Talent; name: string; desc: string; start: number; potential: number }[] = [
-  { key: 'grafter', name: 'Hard worker', desc: 'Nobody\'s wonderkid. Every step up will be earned.', start: 0.365, potential: 0.74 },
+  { key: 'grafter', name: 'Hard worker', desc: 'Nobody\'s wonderkid. Every step up will be earned.', start: 0.365, potential: 0.715 },
   { key: 'promising', name: 'Promising', desc: 'Scouts have noticed. A real shot at the top flight.', start: 0.4, potential: 0.81 },
   { key: 'wonderkid', name: 'Wonderkid', desc: 'The next big thing — if he handles the pressure.', start: 0.445, potential: 0.885 },
 ];

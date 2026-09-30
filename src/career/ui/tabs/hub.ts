@@ -8,6 +8,7 @@ import { SLOT_NAMES, formatDate, formatDateLong, type Slot } from '../../core/da
 import { fullName, potentialRange, userAge, userOvr } from '../../core/footballer';
 import { comp } from '../../core/index';
 import { happinessIndex, setOverride } from '../../core/life';
+import { milestoneCount } from '../../core/milestones';
 import { POSITION_NAMES } from '../../core/attributes';
 import { nationName } from '../../core/data/geography';
 import { selectLineup } from '../../core/selection';
@@ -96,6 +97,7 @@ export function renderHub(app: CareerApp): HTMLElement {
 
   // --- you
   const [pLo, pHi] = potentialRange(s);
+  const miles = milestoneCount(s);
   const youCard = card(
     null,
     [
@@ -109,6 +111,7 @@ export function renderHub(app: CareerApp): HTMLElement {
           h('h3', {}, fullName(u)),
           h('p', { class: 'cc-dim' }, `${Math.floor(userAge(s))} · ${POSITION_NAMES[u.pos]} · ${nationName(u.nat)}`),
           h('div', { class: 'cc-you-badges' }, ovrBadge(userOvr(u), 'OVR'), h('span', { class: 'cc-potential', title: "Scouts' estimate of your potential" }, h('small', {}, 'Potential'), h('strong', {}, `${pLo}–${pHi}`))),
+          s.events.flags.retireAtSeasonEnd === s.season ? pill('Farewell season', 'gold') : null,
         ),
       ),
       keyValue([
@@ -116,6 +119,7 @@ export function renderHub(app: CareerApp): HTMLElement {
         ['Wage', `${money(s, u.contract.wage)}/wk`],
         ['Contract', `until ${u.contract.endSeason + 1}`],
         ['Followers', followers(u.followers)],
+        ['Milestones', h('button', { class: 'cc-link', type: 'button', onclick: () => app.go('profile', 'milestones') }, `${miles.got} / ${miles.total}`)],
       ]),
     ],
     { className: 'cc-hub-you', action: btn('Profile', () => app.go('profile'), 'ghost', { small: true }) },
